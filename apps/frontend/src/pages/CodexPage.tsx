@@ -664,9 +664,9 @@ export default function CodexPage() {
                   className="h-4 w-4"
                 />
                 <span>
-                  ECO-30
+                  ECO-100
                   <span className="ml-1 text-xs text-slate-500 dark:text-slate-400">
-                    Variante do ECO-2 que só envia ao modelo as últimas 30 interações: transforme contextos antigos em resumos antes de descartá-los.
+                    Variante do ECO-2 que só envia ao modelo as últimas 100 interações: transforme contextos antigos em resumos antes de descartá-los.
                   </span>
                 </span>
               </label>
