@@ -381,7 +381,7 @@ export class SandboxJobProcessor implements JobProcessor {
       process.env.ECO3_MAX_TOTAL_TOKENS,
       800_000,
     );
-    this.ecoThirtyMaxInteractions = 30;
+    this.ecoThirtyMaxInteractions = 100;
 
     this.dbQueryTimeoutMs = this.parsePositiveInteger(process.env.DB_QUERY_TIMEOUT_MS, 10_000);
     this.dbMaxRows = this.parsePositiveInteger(process.env.DB_QUERY_MAX_ROWS, 200);
@@ -443,7 +443,7 @@ export class SandboxJobProcessor implements JobProcessor {
           `modo ECO-1: limite prompt=${this.ecoOneMaxTaskDescriptionChars}, toolOutput=${this.ecoOneToolOutputStringLimit}, http_get=${this.ecoOneHttpToolMaxResponseChars}`,
         );
       } else if (this.isEcoTwoFamily(job)) {
-        const ecoLabel = this.isEcoThirty(job) ? 'ECO-30' : 'ECO-2';
+        const ecoLabel = this.isEcoThirty(job) ? 'ECO-100' : 'ECO-2';
         const extra = this.isEcoThirty(job)
           ? `, histórico limitado às últimas ${this.ecoThirtyMaxInteractions} interações`
           : '';
@@ -711,12 +711,9 @@ Modo econômico inteligente ativo: aproveite estratégias enxutas (reutilizar re
     } else if (this.isEcoOne(job)) {
       profileInstruction = `
 Modo ECO-1 ativo: siga o plano descrito em docs/estrategia-token/modo-eco1.md — limite o carregamento de instruções fixas (project_doc_max_bytes), corte e resuma outputs de tools antes de salvá-los, force compaction sempre que o histórico se aproximar do limite do modelo, trate imagens inline como estimativas fixas e aceite automaticamente o nudge para modelos econômicos ao atingir 90% do orçamento. Registre todas as truncagens para que o time saiba o que ficou de fora.`;
-    } else if (this.isEcoTwo(job)) {
+    } else if (this.isEcoTwo(job) || this.isEcoThirty(job)) {
       profileInstruction = `
 Modo ECO-2 ativo: cumpra as rotinas descritas em docs/estrategia-token/modo-eco2.md — monitore total_usage_tokens e rode compactações automáticas assim que ultrapassar o limite configurado, execute uma compactação preventiva antes de cada turno e sempre que trocar para um modelo com janela menor, escolha entre compactação local e remota conforme o provedor, mantenha no máximo 20k tokens de mensagens de usuário (truncando e registrando excessos), pode chamadas de função/tool mais antigas antes de enviar o histórico para o compactador e trunque as saídas de ferramentas antes de devolvê-las ao modelo e abandone loops detectados: se precisar repetir a mesma tool explique o que mudou, caso contrário o sandbox bloqueará tentativas idênticas para poupar tokens.`;
-    } else if (this.isEcoThirty(job)) {
-      profileInstruction = `
-Modo ECO-30 ativo: reaproveite as rotinas do ECO-2 (docs/estrategia-token/modo-eco2.md), mas mantenha no histórico pago apenas as respostas das 30 últimas interações — compacte ou resuma contextos antigos antes de descartá-los e registre tudo que sair para preservar rastreabilidade.`;
     } else if (this.isEcoThree(job)) {
       profileInstruction = `
 Modo ECO-3 ativo: siga o protocolo descrito em docs/estrategia-token/modo-eco3.md — transforme logs longos em resumos antes de reenviá-los, limite as janelas de histórico a blocos pequenos, pare loops que ultrapassem os limites de iterações/tokens e sempre documente o que foi descartado para manter rastreabilidade.`;
@@ -1142,7 +1139,7 @@ ${profileInstruction}`,
       messages.splice(dynamicStart, removedSize);
       this.log(
         job,
-        `Modo ECO-30: removidas interações antigas para manter o limite de ${this.ecoThirtyMaxInteractions}.`,
+        `Modo ECO-100: removidas interações antigas para manter o limite de ${this.ecoThirtyMaxInteractions}.`,
       );
     }
   }
@@ -2678,7 +2675,7 @@ ${profileInstruction}`,
   }
 
   private getEcoTwoLabel(job: SandboxJob): string {
-    return this.isEcoThirty(job) ? 'ECO-30' : 'ECO-2';
+    return this.isEcoThirty(job) ? 'ECO-100' : 'ECO-2';
   }
 
   private isEcoThree(job: SandboxJob): boolean {
@@ -2923,7 +2920,7 @@ ${profileInstruction}`,
   } | undefined {
     if (this.isEcoTwoFamily(job)) {
       return {
-        label: this.isEcoThirty(job) ? 'ECO-30' : 'ECO-2',
+        label: this.isEcoThirty(job) ? 'ECO-100' : 'ECO-2',
         autoCompactTokenLimit: this.ecoTwoAutoCompactTokenLimit,
         historyTargetTokens: this.ecoTwoHistoryTargetTokens,
         userMessageTokenLimit: this.ecoTwoUserMessageTokenLimit,

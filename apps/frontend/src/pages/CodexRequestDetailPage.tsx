@@ -437,10 +437,10 @@ export default function CodexRequestDetailPage() {
 
             {request.profile === 'ECO_30' && (
               <div className="rounded-lg border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-slate-900 dark:border-cyan-900/60 dark:bg-cyan-900/20 dark:text-cyan-100">
-                <p className="font-semibold">Modo ECO-30</p>
+                <p className="font-semibold">Modo ECO-100</p>
                 <ul className="mt-2 list-disc space-y-1 pl-5">
                   <li>Herde as rotinas do ECO-2 (compactações automáticas, controle de tokens de usuário e truncamento de outputs).</li>
-                  <li>Mantenha no histórico apenas as respostas das 30 interações mais recentes enviadas ao modelo.</li>
+                  <li>Mantenha no histórico apenas as respostas das 100 interações mais recentes enviadas ao modelo.</li>
                   <li>Resuma ou compacte interações antigas antes de removê-las para preservar rastreabilidade.</li>
                   <li>Documente no resumo final o que foi descartado para que o time saiba como retomar o contexto.</li>
                 </ul>

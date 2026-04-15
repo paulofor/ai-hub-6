@@ -323,7 +323,7 @@ export const formatProfile = (profile: CodexProfile) => {
     case 'ECO_2':
       return 'Modo ECO-2';
     case 'ECO_30':
-      return 'Modo ECO-30';
+      return 'Modo ECO-100';
     case 'ECO_3':
       return 'Modo ECO-3';
     case 'CHATGPT_CODEX':
