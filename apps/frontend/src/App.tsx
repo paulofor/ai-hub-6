@@ -6,6 +6,7 @@ import SummariesPage from './pages/SummariesPage';
 import AuditLogPage from './pages/AuditLogPage';
 import ShellLayout from './components/ShellLayout';
 import CodexPage from './pages/CodexPage';
+import CodexChatGptPage from './pages/CodexChatGptPage';
 import CodexModelsPage from './pages/CodexModelsPage';
 import CodexRequestDetailPage from './pages/CodexRequestDetailPage';
 import EnvironmentsPage from './pages/EnvironmentsPage';
@@ -27,6 +28,7 @@ function App() {
         <Route path="/environments" element={<EnvironmentsPage />} />
         <Route path="/logs" element={<LogInterpreterPage />} />
         <Route path="/codex" element={<CodexPage />} />
+        <Route path="/codex/chatgpt" element={<CodexChatGptPage />} />
         <Route path="/codex/requests/:id" element={<CodexRequestDetailPage />} />
         <Route path="/codex/models" element={<CodexModelsPage />} />
         <Route path="/summaries" element={<SummariesPage />} />

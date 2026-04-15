@@ -52,7 +52,11 @@ interface ActiveProblemOption {
 const REQUESTS_PER_PAGE = 5;
 const ACTIVE_POLL_INTERVAL_MS = 15000;
 
-export default function CodexPage() {
+interface CodexPageProps {
+  initialProfile?: CodexProfile;
+}
+
+export default function CodexPage({ initialProfile = 'STANDARD' }: CodexPageProps) {
   const [prompt, setPrompt] = useState('');
   const [environment, setEnvironment] = useState('');
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<number | null>(null);
@@ -60,7 +64,7 @@ export default function CodexPage() {
   const [loadingProblems, setLoadingProblems] = useState(false);
   const [problemsError, setProblemsError] = useState<string | null>(null);
   const [selectedProblemId, setSelectedProblemId] = useState('');
-  const [profile, setProfile] = useState<CodexProfile>('STANDARD');
+  const [profile, setProfile] = useState<CodexProfile>(initialProfile);
   const [model, setModel] = useState('');
   const [requestsByPage, setRequestsByPage] = useState<Record<number, CodexRequest[]>>({});
   const [totalRequests, setTotalRequests] = useState(0);
@@ -201,6 +205,10 @@ export default function CodexPage() {
       }
     }
   }, [totalRequests]);
+
+  useEffect(() => {
+    setProfile(initialProfile);
+  }, [initialProfile]);
 
   useEffect(() => {
     fetchRequests(1);
