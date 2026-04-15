@@ -84,10 +84,10 @@ export default function CodexChatGptPage() {
       </section>
 
       {loginCompleted ? (
-        <CodexPage initialProfile="CHATGPT_CODEX" />
+        <CodexPage initialProfile="ECO_30" />
       ) : (
         <section className="rounded-xl border border-slate-200 bg-white p-6 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-300">
-          Após confirmar o login, a tela de solicitações do Codex aparece aqui com o perfil <strong>Codex (ChatGPT)</strong> já selecionado.
+          Após confirmar o login, a tela de solicitações do Codex aparece aqui com o perfil <strong>ECO-100</strong> já selecionado.
         </section>
       )}
     </div>
