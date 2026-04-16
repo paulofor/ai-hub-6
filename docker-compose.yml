@@ -39,6 +39,7 @@ services:
       public-net:
         aliases:
           - aihub-frontend
+ 
   sandbox-orchestrator:
     image: ${SANDBOX_ORCHESTRATOR_IMAGE:-ghcr.io/paulofor/ai-hub-6-sandbox:latest}
     build:
