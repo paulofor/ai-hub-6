@@ -1,0 +1,169 @@
+services:
+  caddy:
+    image: ${CADDY_IMAGE:-ghcr.io/paulofor/ai-hub-6-caddy:latest}
+    restart: unless-stopped
+    depends_on:
+      - frontend
+      - backend
+      - sandbox-orchestrator
+      - mcp-server
+    environment:
+      CADDY_DOMAIN: iahub.xyz
+    ports:
+      - "${CADDY_HTTP_PORT:-80}:80"
+      - "${CADDY_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      default:
+      public-net:
+        aliases:
+          - aihub-caddy
+  backend:
+    image: ${BACKEND_IMAGE:-ghcr.io/paulofor/ai-hub-6-backend:latest}
+    build:
+      context: ./apps/backend
+    command: >
+      /bin/sh -c "if [ -f /run/secrets/openai-token/openai_api_key ]; then
+        export OPENAI_API_KEY=$(cat /run/secrets/openai-token/openai_api_key);
+      fi;
+      exec java -jar /app/app.jar"
+    env_file:
+      - apps/backend/.env.example
+      - .env
+    depends_on:
+      - sandbox-orchestrator
+      - mcp-server
+    volumes:
+      - ./infra:/infra
+      - ${OPENAI_TOKEN_HOST_DIR:-/root/infra/openai-token}:/run/secrets/openai-token:ro
+    networks:
+      default:
+        aliases:
+          - backend
+  frontend:
+    image: ${FRONTEND_IMAGE:-ghcr.io/paulofor/ai-hub-6-frontend:latest}
+    build:
+      context: ./apps/frontend
+    env_file:
+      - apps/frontend/.env.example
+      - .env
+    depends_on:
+      - backend
+    networks:
+      default:
+      public-net:
+        aliases:
+          - aihub-frontend
+  sandbox-mail:
+    image: ${SANDBOX_MAIL_IMAGE:-axllent/mailpit:latest}
+    restart: unless-stopped
+    networks:
+      default:
+        aliases:
+          - sandbox-mail
+
+  sandbox-orchestrator:
+    image: ${SANDBOX_ORCHESTRATOR_IMAGE:-ghcr.io/paulofor/ai-hub-6-sandbox:latest}
+    build:
+      context: ./apps/sandbox-orchestrator
+    env_file:
+      - apps/sandbox-orchestrator/.env.example
+      - .env
+    depends_on:
+      - sandbox-mail
+    environment:
+      CODEX_HOME: /var/lib/ai-hub/codex
+      SANDBOX_SMTP_HOST: ${SANDBOX_SMTP_HOST:-sandbox-mail}
+      SANDBOX_SMTP_PORT: ${SANDBOX_SMTP_PORT:-1025}
+      SANDBOX_MAIL_WEB_URL: ${SANDBOX_MAIL_WEB_URL:-http://sandbox-mail:8025}
+      SANDBOX_MAIL_API_URL: ${SANDBOX_MAIL_API_URL:-http://sandbox-mail:8025/api/v1}
+      # Evita tempestades de spans session_loop enter/exit; INFO fica restrito ao supervisor.
+      CODEX_APP_SERVER_RUST_LOG: ${CODEX_APP_SERVER_RUST_LOG:-codex_core=warn,codex_tui=warn,codex_app_server=info,codex_api=warn,codex_client=warn,warn}
+      CODEX_APP_SERVER_LOG_SQLITE_MAX_BYTES: ${CODEX_APP_SERVER_LOG_SQLITE_MAX_BYTES:-536870912}
+      CODEX_APP_SERVER_LOG_SQLITE_KEEP_ROTATED: ${CODEX_APP_SERVER_LOG_SQLITE_KEEP_ROTATED:-2}
+    volumes:
+      - ${OPENAI_TOKEN_HOST_DIR:-/root/infra/openai-token}:/run/secrets/openai-token:ro
+      - ${GITHUB_PACKAGES_TOKEN_HOST_DIR:-/root/infra/github-packages}:/run/secrets/github-packages:ro
+      - ${GEMINI_TOKEN_HOST_DIR:-/root/infra/gemini-token}:/run/secrets/gemini-token:ro
+      - ${PEPPER_TOKEN_HOST_DIR:-/root/infra/pepper-token}:/run/secrets/pepper-token:ro
+      - ${LUMA_TOKEN_HOST_DIR:-/root/infra/luma-token}:/run/secrets/luma-token:ro
+      - ${KLING_TOKEN_HOST_DIR:-/root/infra/kling-token}:/run/secrets/kling-token:ro
+      - ${HEYGEN_TOKEN_HOST_DIR:-/root/infra/heygen-token}:/run/secrets/heygen-token:ro
+      - ${AWS_CREDENTIALS_HOST_DIR:-/root/infra/aws}:/run/secrets/aws:ro
+      - codex-auth-data:/var/lib/ai-hub/codex
+      - ${SANDBOX_WORKDIR:-/root/ai-hub-6/infra/src}:${SANDBOX_WORKDIR:-/root/ai-hub-6/src}
+    command: >
+      /bin/sh -c "if [ -f /run/secrets/openai-token/openai_api_key ]; then
+        export OPENAI_API_KEY=$(cat /run/secrets/openai-token/openai_api_key);
+      fi;
+      if [ -f /run/secrets/github-packages/github_actor ]; then
+        export GITHUB_ACTOR=$(cat /run/secrets/github-packages/github_actor);
+      fi;
+      if [ -f /run/secrets/github-packages/github_token ]; then
+        export GITHUB_TOKEN=$(cat /run/secrets/github-packages/github_token);
+        export GITHUB_CLONE_TOKEN=${GITHUB_CLONE_TOKEN:-$GITHUB_TOKEN};
+      fi;
+      if [ -f /run/secrets/gemini-token/gemini_api_key ]; then
+        export GEMINI_API_KEY=$(cat /run/secrets/gemini-token/gemini_api_key);
+      fi;
+      if [ -f /run/secrets/pepper-token/pepper_api_token ]; then
+        export PEPPER_API_TOKEN=$(cat /run/secrets/pepper-token/pepper_api_token);
+        export PEPPER_AUTHORIZATION=$(printf 'Bearer %s' "$$PEPPER_API_TOKEN");
+      fi;
+      if [ -f /run/secrets/luma-token/luma_api_key ]; then
+        export LUMA_API_KEY=$(cat /run/secrets/luma-token/luma_api_key);
+      fi;
+      if [ -f /run/secrets/kling-token/kling_api_key ]; then
+        export KLING_API_KEY=$(cat /run/secrets/kling-token/kling_api_key);
+      fi;
+      if [ -f /run/secrets/heygen-token/heygen_api_key ]; then
+        export HEYGEN_API_KEY=$(cat /run/secrets/heygen-token/heygen_api_key);
+      fi;
+      if [ -f /run/secrets/aws/acesso_aws ]; then
+        AWS_ACCESS_KEY_ID_VALUE=$(grep -E '^AWS_ACCESS_KEY_ID=' /run/secrets/aws/acesso_aws | head -n 1 | cut -d= -f2-);
+        AWS_SECRET_ACCESS_KEY_VALUE=$(grep -E '^AWS_SECRET_ACCESS_KEY=' /run/secrets/aws/acesso_aws | head -n 1 | cut -d= -f2-);
+        AWS_DEFAULT_REGION_VALUE=$(grep -E '^AWS_DEFAULT_REGION=' /run/secrets/aws/acesso_aws | head -n 1 | cut -d= -f2-);
+        AWS_SESSION_TOKEN_VALUE=$(grep -E '^AWS_SESSION_TOKEN=' /run/secrets/aws/acesso_aws | head -n 1 | cut -d= -f2-);
+        if [ -n "$$AWS_ACCESS_KEY_ID_VALUE" ]; then export AWS_ACCESS_KEY_ID="$$AWS_ACCESS_KEY_ID_VALUE"; fi;
+        if [ -n "$$AWS_SECRET_ACCESS_KEY_VALUE" ]; then export AWS_SECRET_ACCESS_KEY="$$AWS_SECRET_ACCESS_KEY_VALUE"; fi;
+        if [ -n "$$AWS_DEFAULT_REGION_VALUE" ]; then export AWS_DEFAULT_REGION="$$AWS_DEFAULT_REGION_VALUE"; fi;
+        if [ -n "$$AWS_SESSION_TOKEN_VALUE" ]; then export AWS_SESSION_TOKEN="$$AWS_SESSION_TOKEN_VALUE"; fi;
+      fi;
+      exec node dist/src/index.js"
+    networks:
+      default:
+        aliases:
+          - sandbox-orchestrator
+      public-net:
+        aliases:
+          - sandbox-orchestrator
+  mcp-server:
+    image: ${MCP_SERVER_IMAGE:-ghcr.io/paulofor/ai-hub-6-mcp-server:latest}
+    build:
+      context: ./apps/mcp-server
+    env_file:
+      - .env
+    environment:
+      MCP_SERVER_API_TOKEN: ${MCP_SERVER_API_TOKEN:-}
+      MCP_SERVER_COMMAND_TIMEOUT_SECONDS: ${MCP_SERVER_COMMAND_TIMEOUT_SECONDS:-30}
+      MCP_SERVER_MAX_OUTPUT_CHARS: ${MCP_SERVER_MAX_OUTPUT_CHARS:-20000}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /:/host:ro
+    networks:
+      default:
+        aliases:
+          - mcp-server
+
+networks:
+  default:
+  public-net:
+    external: true
+
+volumes:
+  caddy-data:
+  caddy-config:
+  codex-auth-data:

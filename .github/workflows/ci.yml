@@ -1,0 +1,315 @@
+name: CI
+
+permissions:
+  contents: read
+  packages: write
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build backend
+        run: mvn -f apps/backend -B test
+
+  mcp-server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Build MCP server
+        run: mvn -f apps/mcp-server -B test
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: apps/frontend/package-lock.json
+      - name: Install deps
+        run: npm --prefix apps/frontend ci
+      - name: Lint
+        run: npm --prefix apps/frontend run lint
+
+  sandbox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: apps/sandbox-orchestrator/package-lock.json
+      - name: Install deps
+        run: npm --prefix apps/sandbox-orchestrator ci
+      - name: Test
+        run: npm --prefix apps/sandbox-orchestrator test
+
+  docker:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Resolve GHCR credentials
+        run: |
+          GHCR_USERNAME="paulofor"
+          GHCR_TOKEN="${{ github.token }}"
+          if [ "$GHCR_USERNAME" != "${{ github.repository_owner }}" ]; then
+            echo "GHCR_USERNAME ($GHCR_USERNAME) differs from repository owner (${{ github.repository_owner }})." >&2
+            echo "As this repository publishes to the same owner, set GHCR_USERNAME to ${{ github.repository_owner }}." >&2
+            exit 1
+          fi
+          echo "GHCR_USERNAME=$GHCR_USERNAME" >> "$GITHUB_ENV"
+          echo "GHCR_TOKEN=$GHCR_TOKEN" >> "$GITHUB_ENV"
+      - name: Validate GHCR write permission
+        env:
+          GH_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          owner="${GHCR_USERNAME}"
+          package="ai-hub-6-backend"
+          response="$(curl -sS -o /tmp/ghcr_pkg_check.json -w '%{http_code}'             -H "Authorization: Bearer ${GHCR_TOKEN}"             -H "Accept: application/vnd.github+json"             "https://api.github.com/users/${owner}/packages/container/${package}")"
+
+          if [ "$response" = "403" ]; then
+            echo "Token sem permissão de escrita/leitura no pacote ghcr.io/${owner}/${package}." >&2
+            echo "Use um GHCR_TOKEN (PAT fine-grained ou classic) com Packages: Read and write e acesso ao owner ${owner}." >&2
+            exit 1
+          fi
+
+          if [ "$response" = "404" ]; then
+            echo "Pacote ghcr.io/${owner}/${package} ainda não existe ou o token não consegue enxergá-lo." >&2
+            echo "Se for primeira publicação, confirme que GHCR_USERNAME=${owner} é o namespace correto e que o token tem write:packages." >&2
+          fi
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ env.GHCR_USERNAME }}
+          password: ${{ env.GHCR_TOKEN }}
+      - name: Build and push caddy image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: infra/caddy/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-caddy:latest
+            ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-caddy:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-caddy:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-caddy:buildcache,mode=max
+      - name: Build and push backend image
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/backend
+          push: true
+          tags: |
+            ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-backend:latest
+            ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-backend:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-backend:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-backend:buildcache,mode=max
+      - name: Build and push frontend image
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/frontend
+          push: true
+          tags: |
+            ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-frontend:latest
+            ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-frontend:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-frontend:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-frontend:buildcache,mode=max
+      - name: Build and push MCP server image
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/mcp-server
+          push: true
+          tags: |
+            ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-mcp-server:latest
+            ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-mcp-server:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-mcp-server:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-mcp-server:buildcache,mode=max
+
+      - name: Build and push sandbox orchestrator image
+        uses: docker/build-push-action@v5
+        with:
+          context: apps/sandbox-orchestrator
+          push: true
+          tags: |
+            ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-sandbox:latest
+            ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-sandbox:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-sandbox:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.GHCR_USERNAME }}/ai-hub-6-sandbox:buildcache,mode=max
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs:
+      - backend
+      - frontend
+      - sandbox
+      - mcp-server
+      - docker
+    runs-on: ubuntu-latest
+    concurrency:
+      group: production-deploy-${{ github.ref }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: write
+    env:
+      DEPLOY_HOST: 163.245.203.201
+      DEPLOY_USER: root
+      REMOTE_PATH: /root/ai-hub-6
+      GHCR_USERNAME: paulofor
+      GHCR_TOKEN: ${{ github.token }}
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        env:
+          VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${VPS_SSH_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "SSH_COMMON_ARGS=-i $HOME/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -o ServerAliveCountMax=10 -o TCPKeepAlive=yes -o ConnectTimeout=60" >> "$GITHUB_ENV"
+      - name: Prepare remote directory
+        run: |
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "mkdir -p ${REMOTE_PATH}"
+      - name: Sync repository to VPS
+        run: |
+          rsync -az --delete \
+            -e "ssh ${SSH_COMMON_ARGS}" \
+            --exclude '.git/' \
+            --exclude 'node_modules/' \
+            --exclude '.env' \
+            --exclude 'apps/backend/.env' \
+            ./ "${DEPLOY_USER}@${DEPLOY_HOST}:${REMOTE_PATH}"
+      - name: Authenticate registry on VPS
+        run: |
+          if [ -z "${GHCR_TOKEN}" ]; then
+            echo "GHCR_TOKEN is empty. Configure GHCR_TOKEN or provide GHCR_USERNAME/GHCR_TOKEN secrets with access to ghcr.io" >&2
+            exit 1
+          fi
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "docker login ghcr.io -u '${GHCR_USERNAME}' --password-stdin" <<< "${GHCR_TOKEN}"
+      - name: Ensure public network exists on VPS
+        run: |
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "docker network inspect public-net >/dev/null 2>&1 || docker network create public-net"
+      - name: Normalize Codex App Server env on VPS
+        run: |
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" "set -euo pipefail && \
+            cd ${REMOTE_PATH} && \
+            if [ -f .env ]; then cp .env .env.workflow-backup-\$(date -u +%Y%m%d%H%M%S); else touch .env; fi && \
+            sed -i '/^HUB_ACCOUNT_OAUTH_/d' .env && \
+            sed -i '/^CODEX_APP_SERVER_ENABLED=/d' .env && \
+            sed -i '/^CODEX_APP_SERVER_TURN_TIMEOUT_MS=/d' .env && \
+            sed -i '/^BACKEND_IMAGE=/d; /^FRONTEND_IMAGE=/d; /^SANDBOX_ORCHESTRATOR_IMAGE=/d; /^CADDY_IMAGE=/d; /^MCP_SERVER_IMAGE=/d' .env && \
+            printf '%s\n' \
+              'CODEX_APP_SERVER_ENABLED=true' \
+              'CODEX_APP_SERVER_TURN_TIMEOUT_MS=7200000' \
+              'BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend:${IMAGE_TAG}' \
+              'FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:${IMAGE_TAG}' \
+              'SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:${IMAGE_TAG}' \
+              'CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-caddy:${IMAGE_TAG}' \
+              'MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:${IMAGE_TAG}' \
+              >> .env"
+      - name: Publish services
+        run: |
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" \
+            "set -euo pipefail && \
+            cd ${REMOTE_PATH} && \
+            export CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-caddy:${IMAGE_TAG} && \
+            export BACKEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend:${IMAGE_TAG} && \
+            export FRONTEND_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-frontend:${IMAGE_TAG} && \
+            export SANDBOX_ORCHESTRATOR_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-sandbox:${IMAGE_TAG} && \
+            export MCP_SERVER_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-6-mcp-server:${IMAGE_TAG} && \
+            docker compose pull && docker compose up -d --remove-orphans"
+      - name: Verify production services
+        run: |
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" <<'REMOTE_CHECK'
+          set -euo pipefail
+          cd /root/ai-hub-6
+
+          echo "== docker compose ps =="
+          docker compose ps
+
+          echo "== waiting for internal services =="
+          for attempt in $(seq 1 30); do
+            frontend_status=$(docker compose exec -T caddy wget -q -O /dev/null http://frontend/ && echo ok || echo fail)
+            backend_status=$(docker compose exec -T caddy wget -q -O /dev/null http://backend:8081/actuator/health && echo ok || echo fail)
+            mcp_status=$(docker compose exec -T caddy wget -q -O /dev/null http://mcp-server:8084/actuator/health && echo ok || echo fail)
+
+            if [ "${frontend_status}" = ok ] && [ "${backend_status}" = ok ] && [ "${mcp_status}" = ok ]; then
+              break
+            fi
+
+            if [ "${attempt}" = 30 ]; then
+              echo "Internal service check failed after ${attempt} attempts" >&2
+              docker compose logs --tail 120 frontend backend mcp-server caddy >&2
+              exit 1
+            fi
+
+            sleep 2
+          done
+
+          echo "== checking public reverse proxy =="
+          curl -fsS --retry 10 --retry-delay 3 --retry-connrefused https://iahub.xyz/mcp >/tmp/mcp-health.json
+          cat /tmp/mcp-health.json
+          echo "== checking MCP linux-command tool =="
+          mcp_token="$(grep -E '^MCP_SERVER_API_TOKEN=' .env | tail -n 1 | cut -d= -f2-)"
+          if [ -n "${mcp_token}" ]; then
+            docker compose exec -T caddy wget -q -O - \
+              --header="Content-Type: application/json" \
+              --header="Authorization: Bearer ${mcp_token}" \
+              --post-data='{"command":"printf mcp-ok"}' \
+              http://mcp-server:8084/mcp/tools/linux-command | grep -q '"stdout":"mcp-ok"'
+          else
+            docker compose exec -T caddy wget -q -O - \
+              --header="Content-Type: application/json" \
+              --post-data='{"command":"printf mcp-ok"}' \
+              http://mcp-server:8084/mcp/tools/linux-command | grep -q '"stdout":"mcp-ok"'
+          fi
+          curl -fsS --retry 10 --retry-delay 3 --retry-connrefused https://iahub.xyz/ >/dev/null
+          REMOTE_CHECK
+      - name: Remove stale Docker artifacts from VPS
+        run: |
+          ssh ${SSH_COMMON_ARGS} "${DEPLOY_USER}@${DEPLOY_HOST}" <<'REMOTE_CLEANUP'
+          set -euo pipefail
+
+          echo "== Docker disk usage before cleanup =="
+          docker system df
+
+          # This step only runs after production health checks pass. The 24-hour
+          # grace period leaves recent images available for a manual rollback,
+          # while Docker always preserves images used by running containers.
+          docker container prune --force --filter "until=24h"
+          docker image prune --all --force --filter "until=24h"
+          docker builder prune --all --force --filter "until=24h"
+
+          echo "== Docker disk usage after cleanup =="
+          docker system df
+          df -h /
+          REMOTE_CLEANUP

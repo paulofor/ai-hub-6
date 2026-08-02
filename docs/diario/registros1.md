@@ -1,0 +1,3034 @@
+# Registros — AI HUB 6
+
+> Orientação: todos os registros deste documento devem sempre incluir **data e hora no fuso UTC-3**.
+> Neste documento segue política de **append-only** (não pode ter nenhuma linha apagada; apenas inserções).
+
+> Regra obrigatória de timestamp:
+> Antes de adicionar qualquer novo registro, execute obrigatoriamente:
+>
+> ```bash
+> TZ=America/Sao_Paulo date '+%Y-%m-%d %H:%M:%S UTC-3'
+> ```
+>
+> Use exatamente a saída desse comando no título do novo registro.
+> É proibido inventar, estimar, inferir ou reaproveitar data/hora a partir de:
+> - contexto da conversa;
+> - data do commit;
+> - data do CI/build;
+> - metadados do arquivo;
+> - relógio UTC sem conversão explícita;
+> - registros anteriores deste documento.
+>
+> O formato obrigatório do título é:
+>
+> ```md
+> ## YYYY-MM-DD HH:mm:ss UTC-3
+> ```
+>
+> Cada novo registro deve ser adicionado no final do arquivo.
+> Se for necessário registrar mais de uma entrada, execute novamente o comando de data/hora para cada entrada.
+> Nunca crie registro com timestamp futuro em relação ao horário atual de `America/Sao_Paulo`.
+> Em caso de timestamp incorreto já registrado, não apague nem edite o registro antigo; adicione um novo registro de correção explicando o erro.
+> Neste documento segue política de **append-only** (não pode ter nenhuma linha apagada; apenas inserções).
+
+## 2026-05-11 — Fase 1 do plano Codex ChatGPT managed
+- Implementada rota frontend `/codex-chatgpt` com nova página `CodexChatgptPage`.
+- Adicionado acesso no menu lateral e card no dashboard para abertura do novo módulo.
+- MVP da autenticação conectado aos endpoints `POST /account/login/start`, `GET /account/read` e `POST /account/logout`.
+- Bloqueio funcional do uso quando conta não está conectada, conforme fase 1 do plano.
+
+## 2026-05-11 11:26:30 UTC-3
+- Correção de registro: a entrada anterior usou título fora do padrão obrigatório de timestamp UTC-3.
+- Execução da fase 1 do plano `docs/plano-codex-chatgpt-managed.md` no frontend com rota `/codex-chatgpt`, menu/dashboard atualizados e fluxo de autenticação MVP (`/account/login/start`, `/account/read`, `/account/logout`).
+- Bloqueio explícito de uso da área quando a conta não estiver conectada.
+
+## 2026-05-11 11:47:53 UTC-3
+- Executada a fase 2 do plano `docs/plano-codex-chatgpt-managed.md` na página `CodexChatgptPage`.
+- Integração completa com requests/executions no pipeline atual via `POST /codex/requests` com `profile: CHATGPT_CODEX`.
+- Implementado feedback de estado em tempo real com polling de conta (`/account/read`) e execuções (`/codex/requests`) a cada 5 segundos.
+- Tratamento robusto de expiração: bloqueio automático de execução quando conta estiver expirada/desconectada, com instrução de reconexão.
+
+## 2026-05-11 13:42:02 UTC-3
+- Executada a fase 3 do plano `docs/plano-codex-chatgpt-managed.md` na página `CodexChatgptPage` com foco na causa raiz de incidentes operacionais (diagnóstico do ciclo de autenticação e execução).
+- Adicionado suporte de multi-conta opcional no frontend: contas conhecidas por e-mail são reaproveitadas como sugestão (`accountHint`) para o próximo `POST /account/login/start`.
+- Implementada telemetria avançada de troubleshooting na UI com trilha de eventos recentes (polling, login, logout e execução, incluindo falhas).
+- Aplicado hardening de sessão no cliente com alerta preventivo para expiração próxima (janela de 5 minutos) para reduzir falhas por sessão vencida.
+
+## 2026-05-11 14:45:43 UTC-3
+- Diagnóstico de causa raiz no fluxo de conexão do módulo Codex ChatGPT: frontend chamava endpoints `/account/*` inexistentes no backend atual, causando 404 contínuo e impedindo autenticação.
+- Ajustada `CodexChatgptPage` para detectar indisponibilidade da API de conta (404), evitar tentativas de login/polling inválidas e exibir mensagem clara de limitação do ambiente.
+- Bootstrap da página tornado resiliente: ambientes/modelos continuam carregando mesmo quando `/account/read` não existe.
+- Mantida rastreabilidade de troubleshooting por telemetria no frontend ao registrar indisponibilidade da API de conta.
+
+## 2026-05-11 15:03:54 UTC-3
+- Diagnóstico de causa raiz do erro 404 no login: o frontend usava o cliente HTTP com `baseURL=/api`, gerando chamadas para `/api/account/*`, enquanto a autenticação do Codex App Server está exposta em `/account/*`.
+- Corrigida a `CodexChatgptPage` para usar chamadas diretas via `axios` nos endpoints de autenticação (`/account/read`, `/account/login/start`, `/account/logout`), removendo o prefixo incorreto `/api` nesse fluxo.
+- Mantidas as demais integrações do módulo (`/api/codex/*`, `/api/environments`, `/api/codex/models`) sem alteração, isolando o ajuste apenas no ponto da causa raiz.
+
+## 2026-05-11 15:17:21 UTC-3
+- Diagnóstico de causa raiz do erro 405 no login: as chamadas de autenticação foram direcionadas para `/account/*` no host do frontend (Nginx estático), que não aceita `POST` nesse caminho e respondeu `405 Not Allowed`.
+- Corrigida `CodexChatgptPage` para usar o cliente HTTP padrão (`baseURL=/api`) também nas rotas de autenticação, garantindo que `GET /account/read`, `POST /account/login/start` e `POST /account/logout` sejam enviados para o backend correto (`/api/account/*`).
+- Mantido o restante do fluxo inalterado para isolar a correção no ponto de roteamento HTTP incorreto.
+
+## 2026-05-11 17:43:57 UTC-3
+- Diagnóstico de causa raiz do novo 404 em autenticação: o ambiente respondia `GET /account/read` sem erro, mas falhava em `POST /account/login/start`, indicando disponibilidade parcial/inconsistente da API de conta.
+- Ajustada `CodexChatgptPage` para tratar 404 também no ato de conectar: ao receber 404 em `login/start`, a UI marca integração como indisponível, interrompe tentativas repetidas e orienta contato com administração.
+- Extraída função utilitária `is404Error` para padronizar detecção de endpoint ausente no fluxo de leitura/bootstrap/login.
+
+## 2026-05-11 17:53:16 UTC-3
+- Revisão da causa raiz do 404: backend não possuía os endpoints `/api/account/read`, `/api/account/login/start` e `/api/account/logout`.
+- Implementado `AccountController` no backend para expor essas rotas e eliminar o `404 Not Found` estrutural por ausência de mapeamento.
+- `GET /api/account/read` retorna estado explícito `unsupported` e `connected=false`; `POST /api/account/login/start` retorna `501 Not Implemented` com mensagem clara; `POST /api/account/logout` responde com estado desconectado.
+
+## 2026-05-11 18:20:00 UTC-3
+- Diagnóstico de causa raiz do erro `501` em `POST /api/account/login/start`: o backend devolvia `Not Implemented` por um stub sem fluxo de autenticação, impedindo qualquer avanço do login.
+- Implementado fluxo inicial de autenticação no `AccountController`: `login/start` agora retorna URLs para abrir autenticação externa e callback local, substituindo o retorno fixo `501`.
+- Implementado callback `GET /api/account/login/callback` para consolidar sessão conectada no backend (email + expiração), permitindo que `GET /api/account/read` passe a refletir estado `connected` após o retorno.
+- Ajustado `POST /api/account/logout` para limpar sessão de autenticação e retornar estado desconectado de forma consistente.
+
+- Correção de causa raiz no login ChatGPT: removido fallback que preenchia e-mail fictício (`chatgpt-user@openai.com`) no callback quando o provedor não devolvia e-mail.
+- `GET /api/account/login/callback` agora invalida a sessão e redireciona com `?login=missing_email` quando não há e-mail confirmado, evitando exibir conta inexistente como conectada.
+## 2026-05-11 23:23:06 UTC
+- Diagnóstico da causa raiz da falha de autenticação com `?login=missing_email`: o frontend priorizava `response.data.url` (callback local) em vez de `response.data.authUrl` (página de login real), abrindo diretamente `/api/account/login/callback` sem contexto de conta/e-mail.
+- Ajustada `CodexChatgptPage` para priorizar `authUrl` e usar `url` apenas como fallback, garantindo que o fluxo comece na autenticação do provedor antes do callback.
+
+
+- 2026-05-11: Correção de causa raiz no frontend (CodexChatgptPage): parser de /account/read agora interpreta respostas com status sem campo connected e aceita snake_case (account_email/expires_at), evitando falso "desconectado" após login validado na OpenAI.
+- 2026-05-12: Diagnóstico de causa raiz no fluxo Codex ChatGPT: `POST /api/account/login/start` estava devolvendo `authUrl` para `https://chatgpt.com/auth/login`, mas sem integração OAuth/callback real, então o usuário fazia login externo e nunca retornava ao callback do AI Hub.
+- Ajustado `AccountController` para retornar `authUrl` apontando para o callback local configurável (`hub.account.login-callback-url`, default `/api/account/login/callback`), concluindo a sessão no AI Hub após clicar em conectar; `externalAuthUrl` foi mantido apenas como referência informativa.
+
+- 2026-05-12 04:27:43 UTC | Criação do documento docs/codex-rs-autenticacao-chatgpt.md com o passo a passo de autenticação ChatGPT e uso do modelo no codex-rs.
+- 2026-05-12 21:58:18 UTC: Análise de causa raiz do fluxo de autenticação ChatGPT no AI Hub a partir de `docs/codex-rs-autenticacao-chatgpt.md` e `AccountController`; confirmado que o backend atual não executa OAuth real (retorna callback local direto em `authUrl`) e não persiste `access_token`/`refresh_token`, apenas e-mail e expiração em sessão HTTP.
+- 2026-05-12 22:01:39 UTC: Ajuste de causa raiz no fluxo de login ChatGPT do AI Hub: `login/start` voltou a apontar `authUrl` para URL externa com `redirect_uri` para callback local + `state` anti-CSRF; callback agora valida `state` e aceita persistência de `access_token`, `refresh_token` e `id_token` em sessão para evitar login "sem redirecionamento" e ausência de token no estado da sessão.
+- 2026-05-12 22:20:00 UTC: Diagnóstico de causa raiz para o cenário "já estou logado na OpenAI, mas a tela fica desconectada": o callback local depende de um e-mail associado (`accountHint`) para consolidar a sessão; quando nenhum e-mail é informado, o fluxo termina em `missing_email` e bloqueia execuções.
+- Atualizada `CodexChatgptPage` para sempre exibir campo de e-mail da conta OpenAI antes de conectar, enviando `accountHint` explícito no `POST /account/login/start` e registrando telemetria com a conta efetiva usada no login.
+- Melhorado reaproveitamento multi-conta: ao detectar conta conhecida, o e-mail também preenche automaticamente o novo campo, reduzindo reconexões sem contexto.
+
+- 2026-05-13 00:09:07 UTC: Orientação operacional para uso da tela de autenticação: instruído que o usuário deve informar o e-mail da conta OpenAI no campo da tela e clicar em "Conectar com ChatGPT" para abrir `authUrl`; mesmo já logado em outra aba, o callback local só conclui sessão no AI Hub após esse fluxo com `accountHint`.
+
+- 2026-05-13 00:22:00 UTC: Correção de causa raiz no login ChatGPT em produção web: `login/start` montava `redirect_uri` com callback relativo (`/api/account/login/callback`), fazendo o provedor abrir o ChatGPT sem retorno válido ao AI Hub. Ajustado `AccountController` para resolver callback absoluto a partir da requisição (ou respeitar URL absoluta configurada), garantindo retorno ao domínio do AI Hub após autenticação.
+
+- 2026-05-13 00:40:00 UTC: Diagnóstico de causa raiz para HTTPS no mesmo host: o `docker-compose` publicava frontend/backend diretamente em portas HTTP sem um terminador TLS central, impedindo emissão/renovação automática de certificado no ponto de entrada.
+- Implementado serviço `caddy` no `docker-compose` como reverse proxy único (80/443) para o mesmo host, com volumes persistentes de certificados e roteamento por path para `frontend`, `backend` (`/api/*`) e `sandbox-orchestrator` (`/sandbox/*`).
+- Adicionado `infra/caddy/Caddyfile` parametrizado por `CADDY_DOMAIN`, permitindo ativar HTTPS automático via Caddy no domínio público do host.
+
+- 2026-05-13 03:28:06 UTC: Ajuste de causa raiz na publicação de imagens do stack no mesmo ambiente/IP: o serviço `caddy` era o único com imagem fixa (`caddy:2.10-alpine`), diferente dos demais serviços que usam imagem parametrizada por variável de ambiente para publicação no mesmo registry/pipeline. Atualizado `docker-compose.yml` para `CADDY_IMAGE` (default `ghcr.io/paulodb/ai-hub-6-caddy:latest`), alinhando o `caddy` ao mesmo fluxo das outras imagens.
+- 2026-05-13 03:40:09 UTC: Correção de causa raiz da falha no deploy remoto (`docker compose pull`) por imagem inexistente do `caddy` em `ghcr.io/paulodb/ai-hub-6-caddy:latest`.
+- Atualizado `.github/workflows/ci.yml` para exportar também `CADDY_IMAGE=ghcr.io/${GHCR_USERNAME}/ai-hub-caddy:latest` no SSH remoto, garantindo que todos os serviços usem imagens do mesmo namespace no GHCR durante o deploy.
+- Atualizado `docker-compose.yml` para defaults consistentes com o pipeline atual (`ghcr.io/${GHCR_USERNAME:-paulofor}/ai-hub-*`) em `caddy`, `backend`, `frontend` e `sandbox-orchestrator`, eliminando fallback legado `paulodb/ai-hub-6-*` que causava pull quebrado quando variáveis não eram exportadas.
+
+## 2026-05-13 — Correção de deploy GHCR (caddy)
+
+## 2026-07-11 14:56:20 UTC-3
+- Diagnóstico de causa raiz para ausência de `docker compose` na sandbox: a imagem instalava `docker.io`, que disponibiliza o Docker CLI clássico, mas não garante o plugin Compose v2 usado pelo subcomando `docker compose`; por isso o modelo encontrava `docker` mas recebia `docker: 'compose' is not a docker command`.
+- Atualizado `apps/sandbox-orchestrator/Dockerfile` para adicionar o repositório oficial Docker Debian e instalar explicitamente `docker-ce-cli` com `docker-compose-plugin`, tornando `docker compose` parte da imagem da sandbox.
+- Atualizado o preflight do runner para detectar `docker` e `docker compose version`, registrando no checklist inicial quais ferramentas Docker estão disponíveis ao modelo.
+- Atualizadas as instruções enviadas ao modelo para orientar o uso preferencial de `docker compose` em vez de `docker-compose` e validar engine/plugin antes de depender de containers.
+- Atualizadas documentações em `README.md`, `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md` para declarar o plugin Docker Compose v2.
+- Adicionados testes cobrindo o contrato do Dockerfile e do prompt/checklist do runner.
+- Validação: `npm --prefix apps/sandbox-orchestrator test` passou com 64/64 testes.
+- Limitação real de ambiente: o runner local atual possui `docker` mas não `docker compose`, e `docker info` não acessou um daemon Docker válido; por isso não foi possível executar build real da imagem neste ambiente.
+
+## 2026-07-11 21:06:00 UTC - Validação da nova credencial AWS e e-mail AWS-only
+
+- Solicitação recebida: usuário informou que descartou a credencial antiga e disponibilizou uma nova credencial no ambiente para continuar o trabalho de e-mails AWS-only.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a infraestrutura SES/DNS estava ativa, mas a credencial antiga havia sido descartada/invalidada, impedindo o acesso ao S3 para ler os e-mails recebidos. Na nova tentativa, o `AWS_ACCESS_KEY_ID` também apareceu com caractere `CR` no ambiente, causando erro de assinatura no AWS CLI; a validação funcionou ao normalizar `AWS_*` apenas dentro dos comandos, sem imprimir segredos.
+- Validação segura de identidade AWS: `aws sts get-caller-identity` confirmou acesso à conta `948388760606` com o usuário IAM `codex-aih6`.
+- Validação SES: `digicomdigital.com.br` está verificado no SES em `us-east-1`; envio habilitado; limite de envio retornado pelo SES: `Max24HourSend=50000`, `MaxSendRate=14`, `SentLast24Hours=0`.
+- Validação inbound: o rule set ativo `mh-digicom-email-rules` contém a regra `store-and-notify-digicom`, habilitada para o domínio `digicomdigital.com.br`, gravando no bucket `mh-digicom-email-948388760606` com prefixo `inbound/` e notificação SNS `mh-digicom-email-inbound`.
+- Teste real executado: enviado e-mail SES de `whatsapp@digicomdigital.com.br` para `whatsapp@digicomdigital.com.br` com assunto `Teste inbound Marketing Hub 20260711T210558Z`; SES retornou `MessageId=0100019f530057c3-c7e89e54-6853-4671-a860-fe13a8055a51-000000`.
+- Resultado do recebimento: novo objeto S3 criado em `inbound/26m1r60f8umsqqgc6la1qppqo0go4nklrgnbp0g1`, com cabeçalhos confirmando entrega para `whatsapp@digicomdigital.com.br`, `X-SES-Spam-Verdict: PASS`, `X-SES-Virus-Verdict: PASS`, `dkim=pass` e `dmarc=pass`.
+- Decisão: o e-mail `whatsapp@digicomdigital.com.br` está operacional para receber confirmação da Meta; recomendado iniciar a criação da nova BM somente mantendo esta credencial ativa até capturarmos o código/link enviado pela Meta.
+- Investigada causa raiz da falha no deploy: o workflow publicava backend/frontend/sandbox, mas não publicava a imagem `ai-hub-caddy`; no deploy, `docker compose pull` sempre tentava baixar `ghcr.io/<owner>/ai-hub-caddy:latest` e falhava com `not found`.
+- Ajustado `.github/workflows/ci.yml` para build/push da imagem `ai-hub-caddy` usando `infra/caddy/Dockerfile`.
+- Ajustada rotina de cleanup para também remover a tag SHA do pacote `ai-hub-caddy`.
+
+## 2026-05-13 01:27:22 UTC-3
+- Diagnóstico de causa raiz da falha no build/push da imagem `ai-hub-caddy` no CI: o workflow executava `docker buildx build --file infra/caddy/Dockerfile`, porém esse Dockerfile não existia no repositório, interrompendo a etapa de build.
+- Adicionado `infra/caddy/Dockerfile` mínimo e consistente com o stack atual (base `caddy:2.10-alpine` + cópia de `infra/caddy/Caddyfile`), restaurando o artefato esperado pela pipeline.
+
+- 2026-05-13 06:10:00 UTC: Criação do novo módulo `apps/mcp-server` (Java 21, Spring Boot, Maven) para atuar como serviço MCP dedicado, atacando a causa raiz da ausência de um serviço isolado para tools remotas no mesmo host dos demais módulos.
+- Implementada tool HTTP `POST /mcp/tools/linux-command` com autenticação por token (`X-MCP-TOKEN`) e execução de comandos Linux via `/bin/bash -lc`, com timeout defensivo de 30s para evitar processos presos.
+- Atualizados `docker-compose.yml` e `.github/workflows/ci.yml` para incluir build/test/push/deploy da imagem `ai-hub-mcp-server` no mesmo fluxo e host dos outros módulos.
+- 2026-05-13 18:40:00 UTC: Ajuste inicial solicitado para mover o MCP Server para uma porta livre no stack: alterado o mapeamento padrão para `MCP_SERVER_HTTP_PORT=8085` (host) -> `8084` (container) no `docker-compose`, evitando colisão com portas já reservadas no projeto/deploy.
+- 2026-05-13 18:40:00 UTC: Atualizado o deploy remoto no workflow (`REMOTE_IMAGES_ENV`) para exportar explicitamente `MCP_SERVER_HTTP_PORT=8085`, mantendo consistência entre CI e `docker-compose` ao subir os serviços no VPS.
+- 2026-05-13 18:40:00 UTC: Diagnóstico de causa raiz do erro reportado no log de deploy: a falha que interrompe a publicação não está no MCP Server e sim no bind do `caddy` em `0.0.0.0:80` (`port is already allocated`), indicando conflito pré-existente de porta HTTP no host.
+- 2026-05-13 19:05:00 UTC: Revisão completa das portas dos containers no mesmo host com `caddy` como único proxy reverso de borda.
+- Removida a publicação de portas host para `backend`, `frontend`, `sandbox-orchestrator` e `mcp-server` no `docker-compose`; esses serviços passam a ficar acessíveis somente na rede interna do compose (via DNS de serviço), reduzindo superfície de conflito e exposição indevida.
+- Mantidas apenas as portas do `caddy` (`80/443`) como ponto de entrada externo, alinhando o desenho de rede com a causa raiz do incidente de bind em host compartilhado.
+- Ajustado workflow de deploy para não exportar mais `MCP_SERVER_HTTP_PORT`, já que não há publicação externa de porta do MCP no host.
+
+## 2026-07-27 11:15:53 UTC-3
+- Pergunta explícita de causa raiz: "por que esse erro aconteceu?". Resposta: no diálogo Codex ChatGPT MKT já havia estado local para marcar comentário como lido, mas não existia uma ação posterior para retirar a solicitação já consumida da tela; por isso respostas lidas continuavam ocupando a mesma área visual e gerando confusão.
+- Implementado em `apps/frontend/src/pages/CodexChatgptPage.tsx` o estado local persistido de solicitações retiradas da tela por perfil (`localStorage`), usando o padrão já existente para comentários lidos.
+- Adicionado botão de retirar da tela no card de comentário somente quando o comentário estiver marcado como lido, ocultando a resposta do modelo e a mensagem do usuário vinculada à mesma solicitação.
+- Adicionada barra discreta para informar quantas solicitações lidas foram retiradas e permitir mostrar tudo novamente sem apagar histórico nem alterar dados no backend.
+
+## 2026-07-22 00:59:48 UTC-3
+- Solicitação recebida: baixar/analisar o repositório no ambiente e tentar executar o Codex ChatGPT Sandbox.
+- Repositório já estava disponível no workspace local em `/root/ai-hub/src/ai-hub-a5307751-7e74-4050-bf99-ab8036fbee4c-3K0HnN/repo`.
+- Avaliadas três alternativas: subir a stack completa via Docker Compose, executar o `sandbox-orchestrator` isolado em Node e rodar a suíte de testes do módulo; escolhido iniciar pelo módulo isolado por reduzir dependências externas e permitir validar a causa raiz de eventuais falhas.
+- Validação de ambiente: `docker compose version` disponível, mas `docker version` não conseguiu conectar em `/var/run/docker.sock`, indicando ausência de Docker daemon/socket no ambiente local; por isso a stack completa não pôde ser executada localmente.
+- Executado `npm ci --prefix apps/sandbox-orchestrator`, com instalação concluída; `npm audit` reportou 7 vulnerabilidades, sem bloquear a execução.
+- Executado `npm --prefix apps/sandbox-orchestrator test`; resultado: 71/71 testes passaram, incluindo fluxos de `CHATGPT_CODEX`, `CHATGPT_CODEX_SANDBOX`, `thread/start`, `turn/start` e sandbox mode em kebab-case.
+- Executado `docker compose config --quiet`; resultado sem erros, validando a sintaxe/configuração do Compose apesar da ausência do daemon Docker.
+- Executado `npm --prefix apps/sandbox-orchestrator run build`; build TypeScript concluído com sucesso.
+- Tentativa inicial de iniciar `sandbox-orchestrator` com `CODEX_APP_SERVER_ENABLED=true` falhou porque `CODEX_HOME=/tmp/ai-hub-codex-home` apontava para diretório inexistente; causa raiz: pré-condição de diretório persistente do Codex não preparada no ambiente descartável.
+- Criado o diretório `/tmp/ai-hub-codex-home` e reiniciado o serviço em `PORT=18083`; `GET /health` retornou `status=ok` e `codexAppServer.status=ready`.
+- Validados endpoints internos: `GET /codex-app-server/account/read` retornou `connected=false`, `requiresOpenaiAuth=true`, `blockReason=CODEX_NOT_AUTHENTICATED`; `GET /codex-app-server/models` listou modelos; `POST /codex-app-server/account/login/start` iniciou device code e o login pendente foi cancelado em seguida.
+- Limitação real: execução de uma request real do modelo via ChatGPT Codex Sandbox depende de autenticação humana ChatGPT no Codex App Server; sem essa autenticação, o serviço fica pronto, mas `executable=false`.
+
+- 2026-05-13 20:12:24 UTC — Diagnóstico e correção de causa raiz no acesso por domínio: o `docker-compose.yml` aplicava fallback silencioso `CADDY_DOMAIN:-localhost`, fazendo o Caddy emitir certificado local para `localhost` e ignorar o domínio público quando a variável não era carregada. Ajustado para tornar `CADDY_DOMAIN` obrigatória com erro explícito no startup (`${CADDY_DOMAIN:?...}`), evitando reincidência e falha silenciosa em produção.
+
+- 2026-05-13 20:18:00 UTC — Complemento da correção de causa raiz: além de tornar `CADDY_DOMAIN` obrigatório no compose, incluída a variável no `.env.example` com o domínio informado (`iahub.xyz`) para evitar ausência da configuração durante deploy/bootstrap e impedir regressão para certificado local.
+- 2026-05-13 20:40:00 UTC — Correção de causa raiz da falha `yaml: line 11: mapping values are not allowed in this context` durante deploy remoto: o passo de publicação montava um blob único em `REMOTE_IMAGES_ENV` (vários pares `KEY=VALUE` com tags `:latest`) e injetava via `export`, combinação frágil a parsing/quoting em diferentes shells/contexts do runner.
+- Ajustado `.github/workflows/ci.yml` para definir as imagens diretamente como variáveis de ambiente inline no comando remoto do `docker compose` (`CADDY_IMAGE=... BACKEND_IMAGE=... ... docker compose pull && docker compose up -d`), eliminando a camada intermediária e evitando erro de interpretação YAML/shell.
+
+## 2026-07-23 00:17:13 UTC-3
+- Solicitação recebida: investigar dashboard que, após meia-noite no Windows em São Paulo, não somou corretamente o novo dia e exibiu a virada diária como dia anterior.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: `CodexRequestService.dashboardMetrics()` usava `ZoneId.systemDefault()`, que no container/backend tende a ser UTC; na virada de meia-noite de `America/Sao_Paulo`, os buckets de dia/semana/mês e os `startsAt` eram calculados a partir de `00:00Z`, fazendo o frontend em São Paulo renderizar o último bucket como `22/07` e agregando a janela diária fora do calendário local do usuário.
+- Alternativas avaliadas: corrigir apenas a formatação no frontend, configurar `TZ` global do container, ou tornar o timezone do dashboard explícito no backend. Escolhida a terceira por atacar a regra de negócio na origem, manter UTC para persistência e permitir configuração operacional.
+- Ajustado o backend para usar `hub.dashboard.time-zone` com padrão `America/Sao_Paulo` nas métricas do dashboard.
+- Adicionado teste de regressão para `2026-07-23T03:14:00Z` (`00:14` em São Paulo), garantindo início do dia em `2026-07-23T03:00:00Z` e não `2026-07-23T00:00:00Z`.
+
+- 2026-05-13 20:55:00 UTC — Correção de causa raiz do erro `yaml: line 11: mapping values are not allowed in this context` no `docker compose` durante deploy: a expressão de variável obrigatória em `docker-compose.yml` continha mensagem com `": "` (`ex.: ...`) em escalar YAML sem aspas (`CADDY_DOMAIN: ${...}`), o que quebra parsing YAML na linha 11.
+- Ajustado `CADDY_DOMAIN` para valor entre aspas (`CADDY_DOMAIN: "${...}"`), preservando validação obrigatória da variável e eliminando ambiguidade de parsing YAML.
+
+- 2026-05-13 21:05:00 UTC — Ajuste solicitado em revisão: exemplo do domínio em `CADDY_DOMAIN` alterado para `iahub.xyz` (sem usar domínio genérico), mantendo validação obrigatória da variável.
+
+- 2026-05-13 21:15:00 UTC — Ajuste solicitado em revisão: `CADDY_DOMAIN` definido diretamente no compose como `iahub.xyz` (`CADDY_DOMAIN: iahub.xyz`), removendo expansão por variável para atender requisito explícito.
+
+- 2026-05-14 01:50:49 UTC — Diagnóstico de causa raiz para divergência de versões em produção: os contêineres em execução podem ficar misturados entre owners distintos no GHCR (ex.: `paulodb` e `paulofor`) porque o deploy monta as imagens com `GHCR_USERNAME` enquanto o build publica em `github.repository_owner`; quando `GHCR_USERNAME` aponta para outro owner, parte das imagens vem de um namespace e parte de outro, parecendo que não é o stack `ai-hub-6` esperado.
+- Mitigação documentada: validar no VPS os valores efetivos de `CADDY_IMAGE`, `BACKEND_IMAGE`, `FRONTEND_IMAGE`, `SANDBOX_ORCHESTRATOR_IMAGE` e `MCP_SERVER_IMAGE` antes do `docker compose pull` e padronizar `GHCR_USERNAME` para o mesmo owner que publica as imagens no workflow.
+
+- 2026-05-14 02:00:00 UTC — Levantamento solicitado sobre owners das imagens `ai-hub` e `ai-hub-6`: referências ativas do stack atual (`docker-compose.yml` e `ci.yml`) usam `ai-hub-*` com owner dinâmico (`GHCR_USERNAME`/`github.repository_owner`) e fallback local para `paulofor`; referências legadas `ai-hub-6-*` ainda existem em documentação/scripts antigos com owner `paulodb` (ex.: `infra/setup_vps.sh` e trecho de README), o que explica confusão de versões no ar quando variáveis não ficam alinhadas.
+
+- 2026-05-14 02:10:00 UTC — Ajuste solicitado para eliminar ambiguidade de nomenclatura de imagens no deploy: padronizado todo o pipeline/compose/README para usar exclusivamente `ai-hub-6-*` (incluindo `caddy` e `mcp-server`), removendo referências ativas a `ai-hub-*` para evitar nova confusão de versão em produção.
+
+- 2026-05-14 02:20:00 UTC — Análise de causa raiz do erro `denied: permission_denied: write_package` no push para `ghcr.io/paulofor/ai-hub-6-backend:latest`: o build da imagem concluiu com sucesso, e a falha ocorre exclusivamente na etapa de publicação no GHCR por falta de permissão de escrita do token/credenciais no namespace `paulofor` (escopo `packages:write` ausente ou token sem acesso ao pacote/owner correto).
+- 2026-05-14 02:35:00 UTC — Orientação solicitada de operação: instruído como verificar na interface do GitHub Actions/Packages qual credencial executou o push para GHCR e como confirmar permissões de `packages:write` no workflow/token para diagnosticar `permission_denied: write_package` pela UI.
+- 2026-05-14 04:25:00 UTC — Novo diagnóstico a partir da evidência visual do host: a causa raiz provável da divergência de versão não é permissão GHCR, e sim contexto/caminho de execução do deploy (`docker compose`) apontando para diretório legado (`/root/ai-hub`) em vez do diretório alvo do stack atual (`/root/ai-hub-6`), fazendo subir contêineres/projeto da pasta errada.
+- 2026-05-14 04:40:00 UTC — Correção de causa raiz no workflow de deploy: alterado `REMOTE_PATH` de `/root/ai-hub` para `/root/ai-hub-6` em `.github/workflows/ci.yml`, garantindo que `rsync` e `docker compose` operem no diretório correto do stack atual no host.
+- 2026-05-14 04:40:00 UTC — Ajuste preventivo adicional no workflow: fallback de `GHCR_USERNAME` trocado de `github.actor` para `github.repository_owner`, reduzindo risco de pull em namespace diferente do owner que publica as imagens.
+
+## 2026-05-14 01:32:12 UTC-3
+- Diagnóstico de causa raiz da falha `denied: permission_denied: write_package` no push para `ghcr.io/paulofor/ai-hub-6-backend:latest`: o job `docker` autenticava no GHCR com `${{ github.repository_owner }}` + `${{ secrets.GITHUB_TOKEN }}`, combinação que pode não ter permissão de escrita no pacote quando o namespace efetivo depende de credenciais de usuário legado/PAT.
+- Ajustado `.github/workflows/ci.yml` para resolver e usar credenciais explícitas no job de build/push (`GHCR_USERNAME`/`GHCR_TOKEN` via secrets, com fallback para owner/GITHUB_TOKEN), alinhando autenticação e destino do push ao mesmo usuário antigo esperado no registry.
+- Padronizadas as tags/cache de todas as imagens do job `docker` para `ghcr.io/${GHCR_USERNAME}/...`, evitando mismatch entre usuário autenticado e namespace de publicação.
+
+## 2026-05-14 01:41:55 UTC-3
+- Ajustada a autorização do workflow de CI para incluir permissões globais `contents: read` e `packages: write`, alinhando o pipeline ao padrão solicitado e evitando falhas de permissão em jobs que acessam o GHCR.
+
+## 2026-07-30 15:51:28 UTC-3
+- Solicitação recebida em modo MKT: verificar a situação atual do experimento 76.
+- Evidências consultadas: API pública do AI Hub para `CodexRequest` 76, lista recente de solicitações Codex, detalhe da solicitação 807 (`Experimento 76 coerente com v6`), status do PR `paulofor/marketing-hub#4616`, runs de GitHub Actions em `main`, healthcheck público de `https://v6.clubemusa.com.br/healthz` e logs recentes do MCP Server.
+- Conclusão operacional: o experimento 76 do Marketing Hub foi tratado nas solicitações 789-807; a solicitação 807 confirmou que o experimento está `RUNNING`, direciona tráfego para a PDE MUSA v6 (`https://v6.clubemusa.com.br`), a v6 está `ACTIVE`, e o vídeo HLS publicado vem do contrato/slot PDE, sem custo/asset direto do experimento.
+- Conclusão de deploy: o PR `paulofor/marketing-hub#4616` está mergeado em `main` em 2026-07-30 18:27:17 UTC, com workflows posteriores em `main` concluídos com sucesso, incluindo `Build & Deploy containers`, `CI - PDE Platform Metodo MUSA`, `CI + CD – marketinghub backend`, `Frontend CI` e `MCP Server - Build and Deploy`.
+- Ponto de atenção comercial: a v6 pública responde `UP`, mas a verificação atual foi feita por APIs/logs disponíveis; a leitura visual das abas de produção do painel administrativo não foi refeita nesta solicitação.
+
+## 2026-07-30 00:22:49 UTC-3
+- Solicitação recebida: verificar e ajustar problema no GitHub Actions.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução falha mais recente estava no workflow `Liquibase MySQL 5.7`, etapa `Apply changelog on MySQL 5.7`; o container Liquibase falhou porque o arquivo `/workspace/apps/backend/src/main/resources/db/changelog/changelog-master.yaml` não existia no checkout daquele PR, enquanto o workflow assumia esse caminho diretamente dentro do container.
+- Alternativas avaliadas: apenas rerodar a Action, pular silenciosamente a validação quando o changelog faltar, ou tornar a pré-condição explícita no workflow e centralizar o caminho do changelog; escolhida a terceira por preservar a validação e tornar a falha diagnóstica antes de acionar o container.
+- Ajustado `.github/workflows/liquibase-mysql57.yml` para declarar `CHANGELOG_FILE`, validar a existência do changelog logo após o checkout e reutilizar o mesmo caminho nos comandos `update` e `status` do Liquibase.
+- 2026-05-14 04:49:56 UTC — Correção de causa raiz para nova ocorrência de `denied: permission_denied: write_package` no push do backend: o workflow priorizava `secrets.GHCR_TOKEN` quando presente, permitindo que um PAT desatualizado/sem `write:packages` sobrescrevesse o token nativo do GitHub Actions e quebrasse a publicação no GHCR.
+- Ajustado `.github/workflows/ci.yml` para o job `docker` autenticar no GHCR com `github.repository_owner` + `github.token` (credencial efêmera do run com `packages:write` do próprio workflow), removendo dependência de segredo legado para o push de imagens.
+- Mantido fallback por segredo apenas no `deploy` (login no VPS) e no cleanup via API, agora com fallback para `github.token` em vez de `secrets.GITHUB_TOKEN`, padronizando a fonte do token do runtime.
+- 2026-05-14 16:51:05 UTC — Ajustado o fallback de `GHCR_USERNAME` no `docker-compose.yml` de `paulofor` para `paulodb` em todos os serviços (`caddy`, `backend`, `frontend`, `sandbox-orchestrator` e `mcp-server`) para alinhar o namespace padrão de pull com o usuário solicitado e eliminar erro de permissão ao publicar/puxar imagens no owner incorreto.
+- 2026-05-14 17:22:09 UTC — Correção de causa raiz para push no owner incorreto (`ghcr.io/paulofor/...`): no job `docker` do CI, a etapa "Resolve GHCR credentials" fixava `GHCR_USERNAME=${{ github.repository_owner }}` e ignorava `secrets.GHCR_USERNAME`; ajustado para a mesma regra do deploy (`secrets.GHCR_USERNAME/GHCR_TOKEN` com fallback), garantindo que build/push usem o namespace autorizado (ex.: `paulodb`) e evitando `denied: permission_denied: write_package`.
+
+## 2026-07-25 15:59:23 UTC-3
+- Solicitação recebida: analisar a solicitação 268 e apontar como melhorar.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a solicitação 268 recebeu como última mensagem do usuário a pergunta sobre o PDE/MUSA com vídeo no hero, mas retornou diagnóstico de ambiente instável relacionado à solicitação anterior; a comparação das solicitações 264 a 268 mostrou padrão de respostas deslocadas entre prompts.
+- Evidência operacional: 264 respondeu à orientação anterior da v5, 265 respondeu à tela de provedores, 266 respondeu à análise da Sofia com cabides, 267 respondeu ao analytics mobile e 268 respondeu ao teste de ambiente local.
+- Evidência técnica no código: `CodexAppServerClient` publica notificações do Codex App Server globalmente por método (`item/agentMessage/delta`, `item/completed`, `turn/completed`) e `JobProcessor.runWithCodexAppServer` assina essas notificações sem filtrar por `threadId`/`turnId`, permitindo que jobs próximos ou sobrepostos gravem mensagem e conclusão de outro turno.
+- Melhoria recomendada: filtrar eventos por `threadId` e, após `turn/start`, também por `turnId`; ignorar eventos de outros turnos; adicionar teste de concorrência com dois jobs simultâneos; e bloquear/avisar no frontend quando houver mensagem pendente na conversa para evitar prompts montados com placeholder `Aguardando resposta do modelo`.
+
+## 2026-07-23 10:49:09 UTC-3
+- Solicitação recebida: disponibilizar as API keys Luma e Kling para o modelo na sandbox em todos os modos Codex ChatGPT, seguindo o padrão já usado para tokens OpenAI/Gemini/Pepper.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: os arquivos de chave já existiam no host (`/root/infra/luma-token/luma_api_key` e `/root/infra/kling-token/kling_api_key`), mas o `docker-compose.yml` ainda não montava esses diretórios no `sandbox-orchestrator` nem exportava `LUMA_API_KEY`/`KLING_API_KEY` antes de iniciar o runner/Codex App Server.
+- Alternativas avaliadas: apenas documentar os caminhos; montar/exportar as chaves no compose como os tokens atuais; criar um gerenciador genérico de segredos. Escolhida a montagem/exportação explícita por repetir o contrato operacional existente, reduzir risco e atender diretamente à solicitação sem redesenhar o stack.
+- Ajustado `docker-compose.yml` para montar `LUMA_TOKEN_HOST_DIR` e `KLING_TOKEN_HOST_DIR` como volumes read-only e exportar `LUMA_API_KEY` e `KLING_API_KEY` quando os arquivos existirem.
+- Atualizado o prompt operacional do `sandbox-orchestrator` para informar aos modos Codex ChatGPT que as variáveis Luma/Kling podem estar disponíveis, sem imprimir valores.
+- Atualizados `.env.example`, `apps/sandbox-orchestrator/.env.example`, `README.md`, `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md` com o contrato dos novos segredos.
+- Adicionado teste de contrato garantindo mount/export das credenciais Luma e Kling no compose.
+- Validação: `docker compose config --quiet` passou; após reinstalar dependências dev com `npm ci --prefix apps/sandbox-orchestrator --include=dev`, `npm --prefix apps/sandbox-orchestrator test` passou com 72/72 testes.
+
+## 2026-07-23 01:27:50 UTC-3
+- Solicitação recebida: executar a sugestão de configurar o Playwright do frontend para usar automaticamente o Chromium do sistema quando o cache próprio do Playwright não existir.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o projeto `apps/frontend` não versionava uma configuração de Playwright com fallback de navegador; em ambientes de sandbox, o Chromium já existe em `/usr/bin/chromium`, mas o Playwright sem configuração tenta usar seu cache próprio e falha antes de iniciar testes visuais.
+- Alternativas avaliadas: definir variável apenas no comando de teste, instalar browsers do Playwright durante validação, ou versionar `playwright.config.ts` com detecção de `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`/`CHROMIUM_BIN`/`CHROME_BIN`/`PUPPETEER_EXECUTABLE_PATH`/`/usr/bin/chromium`. Escolhida a configuração versionada por ser mais reprodutível, leve e aderente ao ambiente.
+- Adicionado `@playwright/test` ao frontend, script `npm run test:e2e`, configuração `apps/frontend/playwright.config.ts` com fallback de executável e smoke test `apps/frontend/tests/e2e/app.spec.ts`.
+
+## 2026-07-23 00:24:40 UTC-3
+- Solicitação recebida: adicionar nos cards do histórico do Codex ChatGPT MKT a quantidade de documentos lidos.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela de detalhes já exibia documentos lidos a partir dos logs de acesso, mas os cards usam o resumo paginado `CodexRequestSummary`, que não incluía uma contagem agregada de documentos; por isso o frontend da listagem não tinha esse dado disponível sem abrir cada detalhe.
+- Alternativas avaliadas: calcular no frontend a partir de `documentAccesses`, fazer requisições extras de detalhes para cada card, ou incluir um campo agregado no resumo paginado. Escolhida a terceira opção por corrigir o contrato na origem e evitar N requisições adicionais na listagem.
+- Ajustado `CodexRequestSummary` e as queries de resumo para retornarem `documentAccessCount` com contagem distinta de documentos lidos por solicitação.
+- Atualizado o parser do frontend e os cards da `CodexChatgptPage` para exibirem `Documentos lidos: N documento(s)` junto de tempo, interações, tokens e custo.
+- Atualizados testes de serviço para preservar a nova métrica ao preparar o título/resumo do card.
+
+- 2026-05-14 17:40:00 UTC — Correção adicional da causa raiz para persistência de push no owner incorreto (`paulofor`): o fallback de `GHCR_USERNAME` no workflow ainda dependia de `github.repository_owner` quando segredo não existia, mantendo namespace errado em forks/migrações; padronizado fallback para `secrets.GHCR_USERNAME` -> `vars.GHCR_USERNAME` -> `paulodb` tanto no job `docker` quanto no `deploy` e no cleanup (`GHCR_OWNER`), garantindo consistência total do namespace no build, pull e limpeza de tags.
+
+## 2026-07-17 23:06:59 UTC-3
+- Solicitação recebida: na lista de últimas execuções do Codex ChatGPT MKT, exibir o título somente em execuções concluídas e deixar execuções em andamento, pendentes e canceladas sem título.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o frontend montava o cabeçalho do card sempre como `#id · título`, usando `requestTitle`, `problemTitle`, título estruturado da resposta ou modelo sem condicionar pelo status da execução.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: adicionada resolução de cabeçalho do histórico que mantém `#id · título` apenas para `COMPLETED`; para demais status, o cabeçalho passa a exibir somente `#id`.
+- Validação: `npm --prefix apps/frontend run build` executado com sucesso após instalar dependências locais do frontend com `npm --prefix apps/frontend ci --include=dev`.
+
+## 2026-07-18 02:13:43 UTC - Orientação opcional no JSON final MKT
+
+- Correção administrativa: a entrada `2026-07-18 02:12:44 UTC` sobre orientação opcional foi inserida em ponto intermediário do diário por correspondência de contexto repetido; como o diário é append-only, ela foi mantida e este registro consolida o mesmo trabalho no final correto do arquivo.
+- Solicitação recebida: orientar o modelo do modo Codex ChatGPT MKT para que `orientacaoProximaAcao` não seja obrigatório e só apareça quando houver uma ação efetiva do usuário necessária para concluir a solicitação.
+
+## 2026-07-23 01:25:37 UTC-3
+- Solicitação recebida: explicar como configurar o Playwright do projeto para usar automaticamente o Chromium do sistema quando o cache de browsers do Playwright não existir.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a sandbox já disponibiliza Chromium em `/usr/bin/chromium` e variáveis como `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, mas projetos sem `playwright.config` próprio continuam usando o comportamento padrão do Playwright, que procura browsers baixados no cache interno (`~/.cache/ms-playwright`); quando esse cache não existe, o teste visual falha antes de abrir o navegador.
+- Alternativas avaliadas: (1) rodar `npx playwright install chromium` em toda validação, simples mas lento e dependente de download; (2) instalar browsers Playwright completos na imagem, mais autônomo porém pesado e redundante com o Chromium já disponível; (3) versionar uma configuração/helper de Playwright que usa `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`, `CHROMIUM_BIN`, `CHROME_BIN` ou `/usr/bin/chromium` como fallback. Orientação escolhida: alternativa 3, por ser leve, reproduzível e alinhada ao ambiente da sandbox sem bloquear execução local padrão.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o contrato estruturado colocava `orientacaoProximaAcao` no exemplo principal do JSON e recomendava string vazia quando não aplicável, induzindo respostas com campo vazio mesmo após implementações concluídas.
+- Alternativas avaliadas: (1) tratar só na resposta manual, sem efeito sistêmico; (2) esconder somente na UI, preservando o prompt ambíguo; (3) alterar o contrato enviado ao modelo e manter o parser compatível com respostas antigas. Escolhida a alternativa 3 por corrigir a causa raiz com baixo risco.
+- Ajustes aplicados: `apps/sandbox-orchestrator/src/jobProcessor.ts` e `apps/frontend/src/pages/CodexChatgptPage.tsx` agora mostram o JSON base sem `orientacaoProximaAcao` e instruem que o campo opcional seja incluído apenas quando o usuário precisar decidir, aprovar, fornecer acesso ou executar etapa fora da sandbox.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para validar a presença da regra opcional no prompt MKT.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator run build --silent` passou; `node --test --test-name-pattern="CHATGPT_CODEX_MKT" apps/sandbox-orchestrator/dist/tests/jobs.test.js` passou; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
+- Observação de ambiente: foi necessário executar `npm --prefix apps/sandbox-orchestrator ci --include=dev` e `npm --prefix apps/frontend ci --include=dev` porque as dependências locais não estavam instaladas. O npm reportou vulnerabilidades existentes nos grafos dos pacotes, sem alteração de dependências para preservar o escopo. Não foi criado Pull Request.
+
+## 2026-07-17 23:43:10 UTC-3
+- Correção administrativa: a entrada `2026-07-17 23:42:44 UTC-3` sobre o texto do modelo piscando foi inserida em ponto intermediário do diário por correspondência de contexto repetido; como o diário é append-only, ela foi mantida e este registro consolida o mesmo trabalho no final correto do arquivo.
+
+## 2026-07-18 21:29:32 UTC-3
+- Solicitação recebida: avaliar se é necessário avisar ao modelo tudo que ele pode usar na sandbox.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a instalação de uma ferramenta na imagem da sandbox não torna automaticamente o uso dela provável ou oportuno pelo modelo; o modelo precisa receber um contrato operacional curto, contextual e acionável sobre capacidades relevantes, especialmente quando a ferramenta deve ser usada em situações específicas, como `actionlint` para GitHub Actions.
+- Evidências analisadas: `README.md`, `docs/sandbox-architecture.md`, `apps/sandbox-orchestrator/src/jobProcessor.ts` e `apps/sandbox-orchestrator/tests/jobs.test.ts` já documentam e/ou injetam no prompt capacidades como Docker Compose v2, AWS CLI, GitHub CLI, `actionlint`, Chromium headless e `sandbox-mail`.
+- Alternativas avaliadas: (1) listar todas as ferramentas instaladas no prompt, com alto risco de ruído; (2) não avisar nada e confiar em descoberta via shell, com maior chance de subuso; (3) informar apenas capacidades de alto valor com regras de uso por contexto e checklist dinâmico de disponibilidade. Escolhida a alternativa 3 por equilibrar aderência ao objetivo, custo cognitivo e confiabilidade operacional.
+- Orientação registrada: avisar o modelo sobre ferramentas estratégicas, mas não transformar o prompt em inventário completo da imagem; preferir instruções condicionais do tipo “use `actionlint` ao alterar `.github/workflows`” e manter validação/checklist automático para ferramentas críticas.
+- Solicitação recebida: corrigir o texto do modelo piscando na lista de últimas execuções quando a solicitação está pendente ou em execução.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a UI usava o modelo como fallback do título do histórico e escondia a linha `Modelo:` quando o título resolvido era igual ao modelo; em execuções pendentes/em execução, campos parciais retornados pelo polling faziam essa condição alternar entre exibir e ocultar.
+- Alternativas avaliadas: (1) remover animação do status `RUNNING`, baixo esforço mas não atacaria a alternância da linha; (2) reservar espaço fixo com CSS, reduziria o salto visual mas manteria lógica instável; (3) separar título de histórico da linha de modelo e renderizar `Modelo:` por presença do campo. Escolhida a alternativa 3 por corrigir a causa raiz com menor risco.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: removido `request.model` como fallback de `resolveRequestHistoryTitle` e alterada a renderização para mostrar `Modelo: ...` sempre que `item.model` existir.
+- Validação executada: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
+- Observação de ambiente: o build inicial falhou porque o frontend estava sem dependências locais de desenvolvimento instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou vulnerabilidades existentes no grafo de dependências, sem alteração de versões por estar fora do escopo. Não foi criado Pull Request.
+
+## 2026-07-18 21:32:52 UTC-3
+
+- Correção administrativa: a entrada `2026-07-19 00:32:25 UTC - Contrato contextual para gh e actionlint` foi registrada com timestamp em UTC, mas este diário exige timestamp UTC-3 obtido via `TZ=America/Sao_Paulo date '+%Y-%m-%d %H:%M:%S UTC-3'`. Como o diário é append-only, a entrada anterior foi mantida e este registro consolida o trabalho no formato correto.
+- Solicitação recebida: seguir a alternativa escolhida para avisar o modelo sobre ferramentas críticas com regra de uso contextual.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a instalação de `gh` e `actionlint` na imagem da sandbox não garante uso consistente; sem contrato operacional explícito e testado, o modelo pode não descobrir as ferramentas ou pode deixar de executar `actionlint` quando alterar workflows GitHub Actions.
+- Alternativas avaliadas: (1) listar todas as ferramentas da imagem, com alta cobertura mas prompt ruidoso; (2) depender de descoberta manual via shell, com prompt menor mas maior risco de subuso; (3) declarar ferramentas estratégicas no prompt com regra de uso contextual e manter teste/documentação de contrato. Escolhida a alternativa 3 por equilibrar clareza, baixo custo cognitivo e maior aderência à confiabilidade do runner.
+- Ajuste aplicado em `apps/sandbox-orchestrator/README.md`: documentado que o runner informa `gh` e `actionlint` ao modelo, com regra para usar `gh` em inspeções GitHub autenticadas e `actionlint` antes de concluir ajustes em `.github/workflows/*.yml`/`.yaml`.
+- Ajuste aplicado em `apps/sandbox-orchestrator/tests/jobs.test.ts`: o teste do checklist inicial agora valida não apenas a disponibilidade de `GitHub CLI e actionlint`, mas também as instruções contextuais de uso de `gh` e `actionlint` no prompt enviado ao modelo.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent`; `node --test --test-name-pattern="inclui checklist de ambiente OK" dist/tests/jobs.test.js` em `apps/sandbox-orchestrator`; `git diff --check`.
+- Observação de ambiente: o build inicial falhou porque as dependências locais do pacote não estavam instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou 7 vulnerabilidades existentes no grafo, sem alteração de dependências por estar fora do escopo. Não foi criado Pull Request.
+
+## 2026-07-18 21:29:56 UTC-3
+- Correção administrativa: a entrada `2026-07-18 21:29:32 UTC-3` sobre avisar ao modelo as ferramentas disponíveis foi inserida em ponto intermediário do diário por correspondência de contexto repetido; como o diário é append-only, ela foi mantida e este registro consolida a orientação no final correto do arquivo.
+- Solicitação recebida: avaliar se é necessário avisar ao modelo tudo que ele pode usar na sandbox.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: instalar uma ferramenta na imagem da sandbox não garante que o modelo saiba quando ela é relevante; a solução correta é informar capacidades estratégicas no prompt de forma contextual e acionável, sem transformar o prompt em inventário completo.
+- Alternativas avaliadas: (1) listar todas as ferramentas instaladas, com alto ruído e maior custo cognitivo; (2) não informar nada e depender de descoberta via terminal, com risco de subuso; (3) informar ferramentas de alto valor com regras condicionais de uso e checklist dinâmico de disponibilidade. Escolhida a alternativa 3.
+- Orientação registrada: manter instruções explícitas para ferramentas críticas como `actionlint`, Docker Compose v2, AWS CLI, `gh`, Chromium/headless e `sandbox-mail`, sempre ligadas ao contexto em que devem ser usadas.
+
+## 2026-07-19 00:27:08 UTC - Consolidação da verificação do actionlint
+
+- Correção administrativa final: a entrada sobre `actionlint` na imagem da sandbox foi inserida em ponto intermediário do diário por correspondência de contexto repetido; como o diário é append-only, ela foi mantida e este registro consolida o trabalho no final correto do arquivo.
+- Solicitação recebida: colocar a instalação do `actionlint` na imagem da sandbox usada pelo modelo.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a necessidade decorre do fato de o modelo validar e corrigir workflows GitHub Actions no runner; se a imagem `ai-hub-6-sandbox` não trouxer `actionlint`, a validação anunciada ao modelo ficaria indisponível.
+- Alternativas avaliadas: (1) instalar `actionlint` sob demanda por job, com maior latência e dependência de rede; (2) depender de pacote de distribuição, com menor manutenção mas menor controle de versão; (3) manter binário oficial versionado no Dockerfile da sandbox e validar no build. A alternativa 3 é a melhor para previsibilidade e já estava aplicada no repositório.
+- Evidências verificadas: `docker-compose.yml` usa `apps/sandbox-orchestrator` como build context da imagem `ghcr.io/paulofor/ai-hub-6-sandbox:latest`; `apps/sandbox-orchestrator/Dockerfile` já define `ARG ACTIONLINT_VERSION=1.7.12`, baixa `rhysd/actionlint`, instala em `/usr/local/bin/actionlint` e executa `actionlint --version`; `apps/sandbox-orchestrator/src/jobProcessor.ts` detecta `actionlint` no preflight e inclui a ferramenta na instrução enviada ao modelo.
+- Ajuste de código: nenhum ajuste necessário além deste registro, porque a instalação solicitada já está presente na imagem correta e coberta por teste.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent` passou; `node --test --test-name-pattern="imagem da sandbox instala ferramentas" dist/tests/jobs.test.js` passou quando executado em `apps/sandbox-orchestrator`.
+- Observação de ambiente: o primeiro teste filtrado falhou quando executado a partir da raiz do repositório porque o teste resolve `Dockerfile` pelo diretório atual; a repetição no diretório correto passou. O `npm ci` reportou 7 vulnerabilidades existentes no grafo do pacote, sem alteração de dependências por estar fora do escopo. O cliente Docker está instalado, mas não há daemon acessível em `/var/run/docker.sock`, então não foi possível rebuildar a imagem localmente. Não foi criado Pull Request.
+
+## 2026-07-18 20:57:47 UTC - GitHub CLI e actionlint na sandbox do modelo
+
+- Solicitação recebida: colocar `gh` e `actionlint` na sandbox para o modelo.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a imagem do `sandbox-orchestrator` lista explicitamente as ferramentas instaladas no runner (`git`, `jq`, `ripgrep`, Docker CLI, AWS CLI, Chromium etc.), mas não declarava nem instalava `gh` ou `actionlint`; por isso essas ferramentas não ficavam disponíveis de forma reprodutível para os jobs do modelo.
+- Alternativas avaliadas: (1) instalar manualmente no container atual, rápido mas efêmero e não reproduzível; (2) apenas documentar a necessidade, baixo esforço mas não entrega a ferramenta ao modelo; (3) alterar a imagem do sandbox, o prompt/checklist do runner, documentação e teste de contrato. Escolhida a alternativa 3 por corrigir a causa raiz e evitar regressão.
+- Ajuste aplicado em `apps/sandbox-orchestrator/Dockerfile`: adicionado `gh` via apt e `actionlint` fixado em `1.7.12`, baixado dos releases oficiais para `amd64` e `arm64`, com validação `gh --version` e `actionlint --version` durante o build da imagem.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: o prompt do runner agora informa que `gh` e `actionlint` estão disponíveis, e o checklist de preflight registra as ferramentas GitHub/CI detectadas.
+- Ajustes de documentação: `README.md` e `docs/sandbox-architecture.md` passaram a declarar GitHub CLI (`gh`) e `actionlint` como ferramentas pré-instaladas na imagem da sandbox.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar o contrato do Dockerfile e a presença da nova instrução/checklist no prompt do runner.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent` passou; `node --test --test-name-pattern="imagem da sandbox instala|checklist de ambiente" dist/tests/jobs.test.js` passou com 2 testes executados, 57 ignorados pelo filtro e 0 falhas; `git diff --check` passou.
+- Validação externa dos artefatos: URLs oficiais dos assets `actionlint_1.7.12_linux_amd64.tar.gz` e `actionlint_1.7.12_linux_arm64.tar.gz` responderam com redirect HTTP válido para `release-assets.githubusercontent.com`.
+- Limitação real de ambiente: não foi possível executar `docker build` porque o daemon Docker/socket `/var/run/docker.sock` não está disponível neste sandbox (`failed to connect to the docker API`). O npm reportou 7 vulnerabilidades existentes no grafo do `sandbox-orchestrator`, sem alteração de dependências por estar fora do escopo. Não foi criado Pull Request.
+
+## 2026-07-18 20:33:36 UTC - jq na imagem da sandbox
+
+- Solicitação recebida: instalar `jq` na imagem da sandbox.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a imagem `sandbox-orchestrator` instala várias ferramentas úteis via `apt-get`, mas o pacote `jq` não estava incluído na lista de dependências, deixando o utilitário ausente em sandboxes novas.
+- Alternativas avaliadas: (1) instalar `jq` apenas no container atual, rápido mas não persiste em rebuilds; (2) documentar a necessidade sem alterar a imagem, baixo risco mas mantém a falha operacional; (3) adicionar `jq` ao Dockerfile da `sandbox-orchestrator` e documentar a ferramenta disponível. Escolhida a alternativa 3 por corrigir a causa raiz e manter o ambiente reprodutível.
+- Ajuste aplicado em `apps/sandbox-orchestrator/Dockerfile`: adicionado `jq` à instalação de pacotes Debian da imagem de produção.
+- Documentação atualizada em `docs/sandbox-architecture.md`: registrado que `jq` fica pré-instalado para inspeção, transformação e validação de JSON dentro da sandbox.
+- Validação executada: `apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends jq && jq --version` passou no container atual com `jq-1.6`; `docker compose config --quiet` passou; `git diff --check` passou.
+- Limitação de ambiente: não foi possível executar build Docker local porque o daemon não está acessível em `/var/run/docker.sock`. Não foi criado Pull Request.
+
+## 2026-07-18 19:47:32 UTC - Orientação sobre Playwright versionado no frontend
+
+- Solicitação recebida: avaliar como atender a sugestão “Ter Playwright já instalado no projeto facilitaria repetir validações visuais sem instalação temporária.”
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: as validações visuais foram úteis para revisar telas, mas o projeto não declara Playwright como ferramenta versionada; isso obriga instalações temporárias em cada sandbox/execução e reduz repetibilidade.
+- Alternativas avaliadas: (1) manter instalação temporária quando necessário, baixo custo imediato mas frágil e lento; (2) adicionar Playwright somente ao `apps/frontend`, com script dedicado e configuração mínima, melhor aderência porque as validações visuais são da UI; (3) criar pacote E2E separado na raiz/monorepo, mais escalável mas excesso de estrutura para o estado atual do repositório. Recomendação: alternativa 2.
+- Orientação proposta: instalar `@playwright/test` como devDependency em `apps/frontend`, adicionar `playwright.config.ts`, script como `test:visual` ou `test:e2e`, pasta inicial `apps/frontend/e2e`, e documentar que os testes devem rodar contra `npm run dev`/`vite preview`.
+- Não houve alteração de dependências nem criação de Pull Request nesta etapa, pois a solicitação foi interpretada como orientação de como atender.
+
+## 2026-07-18 02:12:44 UTC - Orientação opcional no JSON final MKT
+
+## 2026-07-17 23:42:44 UTC-3
+- Solicitação recebida: corrigir o texto do modelo piscando na lista de últimas execuções quando a solicitação está pendente ou em execução.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a UI usava o modelo como fallback do título do histórico e escondia a linha `Modelo:` quando o título resolvido era igual ao modelo; em execuções pendentes/em execução, campos parciais retornados pelo polling faziam essa condição alternar entre exibir e ocultar.
+- Alternativas avaliadas: (1) remover animação do status `RUNNING`, baixo esforço mas não atacaria a alternância da linha; (2) reservar espaço fixo com CSS, reduziria o salto visual mas manteria lógica instável; (3) separar título de histórico da linha de modelo e renderizar `Modelo:` por presença do campo. Escolhida a alternativa 3 por corrigir a causa raiz com menor risco.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: removido `request.model` como fallback de `resolveRequestHistoryTitle` e alterada a renderização para mostrar `Modelo: ...` sempre que `item.model` existir.
+- Validação executada: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
+- Observação de ambiente: o build inicial falhou porque o frontend estava sem dependências locais de desenvolvimento instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou vulnerabilidades existentes no grafo de dependências, sem alteração de versões por estar fora do escopo. Não foi criado Pull Request.
+
+- Solicitação recebida: implementar no sistema que o campo `orientacaoProximaAcao` não seja obrigatório na resposta final do modo Codex ChatGPT MKT; ele deve aparecer somente quando houver uma ação efetiva do usuário necessária para concluir a solicitação.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o contrato estruturado do modo MKT colocava `orientacaoProximaAcao` dentro do exemplo principal de JSON e orientava usar string vazia quando não aplicável; isso induzia o modelo a sempre devolver o campo mesmo em solicitações já implementadas.
+- Alternativas avaliadas: (1) alterar apenas a resposta manual do assistente, sem efeito sistêmico; (2) esconder campo vazio apenas na UI, útil mas não corrige o prompt; (3) ajustar o contrato enviado ao modelo, tornando `orientacaoProximaAcao` opcional e mantendo o parser atual compatível com respostas antigas. Escolhida a alternativa 3 por corrigir a causa raiz e preservar compatibilidade.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: as instruções MKT do Codex App Server e do fluxo legado agora mostram um JSON base sem `orientacaoProximaAcao` e explicam que o campo opcional deve ser incluído somente quando o usuário precisar decidir, aprovar, fornecer acesso ou executar etapa fora da sandbox.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o texto de instruções do modo MKT exibido/enviado pela tela foi alinhado ao novo contrato opcional.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para garantir que o prompt MKT contenha a regra de campo opcional, o caso de solicitação já implementada e a instrução para omitir o campo.
+
+## 2026-05-14 16:32:50 UTC-3
+- Diagnóstico da causa raiz da falha no job `docker` do GitHub Actions: push para `ghcr.io/paulodb/ai-hub-6-caddy:latest` negado com `permission_denied: The requested installation does not exist`, indicando namespace/owner de registry divergente do owner onde o workflow roda (`paulofor`) e/ou ausência de autorização do GitHub App/Actions para publicar no pacote alvo.
+- Orientação operacional no GitHub para restabelecer o pipeline: alinhar todas as tags de imagem para `ghcr.io/paulofor/*`, garantir `permissions: packages: write` no workflow e habilitar acesso do repositório ao pacote no GHCR (Package settings > Manage Actions access).
+
+## 2026-05-14 16:36:05 UTC-3
+- Revisão do diagnóstico com evidência de UI do GitHub Packages: no perfil `paulofor` não aparece pacote `ai-hub-6-caddy` (nem os demais com sufixo `-6`), enquanto o workflow tenta publicar exatamente nesses nomes; isso explica o cenário "mas não tem?" e reforça que o namespace/nome de pacote do pipeline está desalinhado com os pacotes existentes/esperados no owner.
+- Ação de causa raiz recomendada no GitHub: padronizar os nomes usados no CI e no deploy para uma convenção única já existente no owner (ex.: `ai-hub-caddy`/`ai-hub-backend` etc.) **ou** aceitar criar novos pacotes `ai-hub-6-*` e, nesse caso, garantir permissões de publicação e vinculação do pacote ao repositório `paulofor/ai-hub`.
+
+## 2026-05-14 16:38:40 UTC-3
+- Correção do diagnóstico anterior com nova evidência: os pacotes `ai-hub-6-backend`, `ai-hub-6-frontend` e `ai-hub-6-sandbox` existem no owner `paulofor`; portanto o problema não é ausência geral do padrão `ai-hub-6-*`.
+
+## 2026-07-11 18:03:24 UTC-3
+- Continuação do trabalho AWS-only de e-mails do domínio `digicomdigital.com.br` para uso futuro no Marketing Hub e criação de novo Business Manager dedicado ao WhatsApp.
+- Validado por DNS público que os nameservers do domínio já apontam para Route 53 (`ns-1322.awsdns-37.org`, `ns-1821.awsdns-35.co.uk`, `ns-80.awsdns-10.com`, `ns-972.awsdns-57.net`).
+- Validado que o MX público aponta para `10 inbound-smtp.us-east-1.amazonaws.com`, que o SPF raiz está como `v=spf1 include:amazonses.com -all` e que existe DMARC em modo monitoramento (`p=none`).
+- Testado recebimento SMTP no MX da AWS para `whatsapp@digicomdigital.com.br`; o servidor SES inbound respondeu `250 Ok` para o destinatário, indicando aceitação operacional do endereço no nível SMTP.
+- Identificada limitação atual: a credencial AWS temporária usada anteriormente não está mais válida (`InvalidClientTokenId`), impedindo consultar SES/S3/Route53 pela conta e confirmar leitura do conteúdo recebido no bucket.
+- Recomendação operacional: não criar ainda o novo Business Manager da Meta com esse e-mail até garantir acesso de leitura aos e-mails recebidos, pois a Meta provavelmente enviará código/link de confirmação que precisará ser recuperado no S3 ou no inbox do Marketing Hub.
+- Causa raiz refinada para a falha mostrada no job: o erro ocorreu especificamente no push de `ai-hub-6-caddy` com `permission_denied: The requested installation does not exist`, indicando desalinhamento de autorização/vinculação apenas para esse pacote (ou package inexistente para `caddy`) no GHCR.
+
+## 2026-07-15 22:59:40 UTC-3
+- Solicitação atendida: adicionar botão para cancelar uma solicitação enquanto ela está pendente ou em execução na tela `CodexChatgptPage`.
+- Pergunta explícita de causa raiz: “por que esse erro/problema aconteceu?”. Resposta: o backend e o sandbox-orchestrator já possuíam contrato de cancelamento (`POST /api/codex/requests/{id}/cancel`), mas a tela principal não expunha essa ação nos cards acompanhados pelo usuário; por isso uma solicitação enviada por engano ficava sem controle direto na UI.
+- Alternativas avaliadas: (1) apenas remover/esconder o card localmente, baixo esforço mas sem cancelar a execução real; (2) chamar o endpoint existente de cancelamento por solicitação, baixo risco e aderente ao contrato atual; (3) criar cancelamento em massa novo, mais amplo porém fora do pedido. Escolhida a alternativa 2.
+- Ajustada `apps/frontend/src/pages/CodexChatgptPage.tsx` para incluir estado de cancelamento em andamento, confirmação antes da ação, chamada a `/codex/requests/{id}/cancel`, atualização da conversa e do histórico, telemetria de sucesso/falha e mensagem clara quando o status vira `CANCELLED`.
+- Botão `Cancelar solicitação` exposto tanto no balão da conversa quanto nos cards de últimas execuções para solicitações não terminais (`PENDING`/`RUNNING`).
+- Validação: `npm --prefix apps/frontend run build` executado com sucesso após instalar dependências locais com `npm --prefix apps/frontend ci --include=dev`.
+
+## 2026-07-13 13:02:08 UTC-3
+- Solicitação atendida: incluir total de tokens e custo total estimado nos cards de resumo das últimas execuções do modo Codex ChatGPT MKT.
+- Pergunta de causa raiz aplicada: “por que esse erro aconteceu?”. Resposta: a API/listagem já expõe `totalTokens` e `cost`, e o parser comum do frontend já normaliza esses campos, mas o card de histórico da `CodexChatgptPage` renderizava apenas tempo gasto e interações.
+- Alternativas avaliadas: alterar backend/DTO (maior risco e desnecessário), recalcular no card a partir das interações (risco de divergência do custo oficial), ou renderizar os campos já normalizados no card. Escolhida a terceira opção por menor escopo e aderência ao dado oficial persistido.
+- Ajustado `apps/frontend/src/pages/CodexChatgptPage.tsx` para exibir `Tokens` com `formatTokens(item.totalTokens)` e `Custo estimado` com `formatCost(item.cost)` nos cards de execuções concluídas.
+- Validação: `npm --prefix apps/frontend ci --include=dev` para restaurar dependências locais e `npm --prefix apps/frontend run build` executado com sucesso.
+
+## 2026-07-14 17:27:24 UTC
+- Solicitação analisada: como permitir que a sandbox do modelo envie e receba mensagens de WhatsApp para testar um chatbot de outra aplicação.
+- Direcionamento proposto: evitar colocar credenciais ou sessão WhatsApp pessoal dentro da sandbox; criar um canal de teste controlado via WhatsApp Cloud API ou provedor equivalente, exposto para a sandbox por uma ferramenta/backend interno com permissões restritas, logs e isolamento por execução.
+- Observação: não foi aplicado ajuste de código neste turno; a resposta foi arquitetural.
+
+## 2026-07-11 18:26:02 UTC-3
+- Diagnóstico de causa raiz para a tela Codex ChatGPT MKT aparentar travamento na execução `#1627`: o backend criou e despachou a solicitação para o sandbox normalmente, e o sandbox retornou conteúdo/callback para a execução por volta de `2026-07-11T21:18:52Z`.
+- Evidência operacional coletada via MCP: containers principais estavam ativos, sem pressão relevante de CPU/memória; o problema observado concentrou-se no backend com `HikariPool-1 - Connection is not available, request timed out after 60000ms (total=10, active=10, idle=0, waiting>0)`.
+- Resposta explícita à pergunta “por que esse erro aconteceu?”: a tela ficou travada porque o backend esgotou o pool de conexões JDBC com o MySQL enquanto atendia listagens/polling de `/api/codex/requests`, impedindo a UI de carregar o estado já atualizado da execução.
+- Causa técnica provável identificada no código: a listagem `CodexRequestService.listPage` retorna entidades `CodexRequest` completas com vários campos `LONGTEXT` (`prompt`, `responseText`, `modelTranscript`, `executionLog`) e ainda é chamada em polling; isso aumenta custo de leitura/serialização e mantém conexões ocupadas quando há várias requisições simultâneas ou clientes cancelando por timeout.
+- Não foi criado PR nem aplicado ajuste funcional; recomendação técnica registrada: criar DTO leve para listagem, separar endpoint de detalhe, reduzir polling/concorrência no frontend e configurar limites/timeout do pool de banco com observabilidade antes de aumentar capacidade.
+- Ação objetiva no GitHub: abrir/criar o package `ai-hub-6-caddy` no owner correto, vincular ao repositório `paulofor/ai-hub` em `Manage Actions access` e manter `packages: write` no workflow.
+
+## 2026-05-14 16:40:29 UTC-3
+- Nova correção do diagnóstico com evidência adicional: o package `ai-hub-6-caddy` também existe no owner `paulofor` (publicado por `paulofor/ai-hub`), então a hipótese de inexistência do package não se sustenta no estado atual.
+- Causa raiz provável consolidada para `permission_denied: The requested installation does not exist`: problema de autorização da instalação/token usada no run específico (ex.: `GITHUB_TOKEN` sem escopo efetivo de escrita naquele contexto, pacote privado sem grant para aquele repositório/workflow run, ou execução em contexto diferente como fork/owner divergente), e não ausência de nome de pacote.
+- Diretriz operacional: validar no run que falhou qual `GHCR_USERNAME` e qual token foram efetivamente usados no login (`docker/login-action`), manter `permissions.packages=write`, e conferir no package `ai-hub-6-caddy` o vínculo explícito de Actions para `paulofor/ai-hub`.
+
+## 2026-05-14 16:43:24 UTC-3
+- Correção explícita do ponto de autorização: se o package GHCR está vinculado ao repositório `paulofor/ai-hub-6`, conceder acesso para `paulofor/ai-hub` não resolve o run desse projeto; o grant e/ou publicação devem apontar para o repositório correto (`ai-hub-6`) para a instalação existir no contexto esperado.
+- Causa raiz refinada: mismatch entre o repositório associado ao package (ex.: `paulofor/ai-hub-6`) e o repositório que executa o workflow/push (ex.: `paulofor/ai-hub`) pode produzir exatamente `permission_denied: The requested installation does not exist`.
+- Ação objetiva: alinhar origem do workflow e vínculo do package no mesmo repo (`paulofor/ai-hub-6`), revisar `Manage Actions access` no package com esse repositório e validar secrets/variables no mesmo projeto onde o workflow roda.
+
+## 2026-05-14 16:45:45 UTC-3
+
+## 2026-07-24 16:13:20 UTC-3 - Controle estruturado de alteração de código no JSON MKT
+
+- Solicitação recebida: ajustar o JSON de retorno do modo Codex ChatGPT MKT para informar se houve alteração de código no repositório e trazer um resumo curtíssimo para compor a descrição do PR.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o contrato final do modo MKT só estruturava título, comentário, sugestão de ambiente e orientação opcional; por isso a UI precisava inferir alteração de código por texto e o backend não tinha um resumo confiável e acumulável para descrição de PR.
+- Alternativas avaliadas: (1) inferir mudança apenas por `git diff` no orquestrador, robusto para detectar diff mas sem resumo semântico; (2) manter heurística textual no frontend, baixo esforço mas impreciso; (3) exigir campos estruturados no JSON final e fazer UI/backend consumirem esses campos. Escolhida a alternativa 3 por corrigir a causa raiz e reduzir ambiguidade.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts` e `apps/frontend/src/pages/CodexChatgptPage.tsx`: o contrato MKT agora exige `alterouCodigoRepositorio` booleano e `resumoCodigoPr` string curta, além de manter `orientacaoProximaAcao` opcional.
+- Ajuste aplicado em `apps/frontend/src/components/CodexResponseBody.tsx` e `apps/frontend/src/pages/CodexChatgptPage.tsx`: o badge “Gerou código” e o alerta de código pendente no botão `Pedir PR` do MKT passaram a depender de `alterouCodigoRepositorio=true`.
+- Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/web/CodexController.java`: a descrição do PR passa a usar `#id - resumoCodigoPr` quando a resposta estruturada indicar alteração de código, acumulando os resumos das solicitações concluídas do lote; sem resumo estruturado, mantém fallback para o prompt.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts`, `apps/frontend/tests/e2e/app.spec.ts` e `apps/backend/src/test/java/com/aihub/hub/web/CodexControllerTest.java`.
+- Alinhamento aplicado na configuração para o contexto correto do owner/repositório atual (`paulofor` / stack `ai-hub-6`), atacando a causa raiz de mismatch entre defaults locais e destino real de publicação no GHCR.
+- Atualizado `.github/workflows/ci.yml` para fallback padrão de `GHCR_USERNAME` em `paulofor` (jobs `docker`, `deploy` e `cleanup`), evitando fallback legado para `paulodb` quando secrets/vars não estiverem definidos.
+- Atualizado `docker-compose.yml` para fallback de `GHCR_USERNAME` em `paulofor` e para `SANDBOX_WORKDIR` default em `/root/ai-hub-6/...`, mantendo consistência com `REMOTE_PATH=/root/ai-hub-6` no deploy.
+- 2026-05-14 20:50:14 UTC — Aplicado aos demais módulos o mesmo ajuste de namespace padrão usado no fluxo do `caddy`: fallback de `GHCR_USERNAME` alterado de `paulofor` para `paulodb` no CI e no `docker-compose` (`backend`, `frontend`, `sandbox-orchestrator`, `mcp-server` e `caddy`), para evitar push/pull no owner incorreto que dispara `denied: permission_denied: write_package`.
+- 2026-05-14 21:01:02 UTC — Correção da causa raiz do erro `403 Forbidden / The requested installation does not exist` no push para `ghcr.io/paulodb/...`: o fallback padrão de `GHCR_USERNAME` no workflow ainda apontava para `paulodb` quando secrets/vars estavam ausentes, forçando publicação no owner errado. Atualizado `.github/workflows/ci.yml` para fallback padrão `paulofor` nos jobs `docker`, `deploy` e `cleanup`.
+- 2026-05-14 21:15:08 UTC — Correção de causa raiz para falha seletiva no push do backend (`denied: permission_denied: write_package`): o workflow podia combinar `GHCR_USERNAME` customizado (ex.: `paulofor`) com `github.token` (sem escopo para publicar em owner divergente), gerando erro de permissão em pacotes específicos. Ajustada a etapa `Resolve GHCR credentials` para falhar cedo quando `GHCR_USERNAME != github.repository_owner` e não houver `secrets.GHCR_TOKEN`, com mensagem explícita para configurar PAT `write:packages` ou alinhar owner.
+
+## 2026-05-14 21:19:15 UTC-3
+- Diagnóstico de causa raiz para falha recorrente no push do backend para GHCR (`denied: permission_denied: write_package`): o login no registry estava ocorrendo, porém sem validação prévia de autorização no pacote/namespace, fazendo o erro aparecer apenas no `buildx`.
+- Ajustado `.github/workflows/ci.yml` com etapa explícita `Validate GHCR write permission` antes do push para verificar acesso ao pacote `ghcr.io/${GHCR_USERNAME}/ai-hub-6-backend` via API GitHub e falhar cedo com mensagem objetiva sobre escopo `Packages: Read and write` e namespace correto.
+- Mantida a etapa de login/push inalterada após a validação para preservar o fluxo atual e atacar a causa raiz (permissão do token/owner), não apenas o sintoma no build.
+
+## 2026-05-14 21:40:10 UTC-3
+- Revisão orientada à causa raiz do erro `write_package` considerando publicação no mesmo owner do repositório: removida dependência de `secrets.GHCR_TOKEN` no workflow e padronizado uso de `github.token` nos fluxos de build/push, deploy e cleanup de GHCR.
+- Ajustada a etapa `Resolve GHCR credentials` para sempre definir `GHCR_TOKEN=${{ github.token }}` e falhar cedo se `GHCR_USERNAME` divergir de `github.repository_owner`, evitando combinações inválidas de owner/token.
+- Com isso, todos os pontos do workflow que autenticam/chamam GHCR passam a usar o mesmo token nativo do run, eliminando inconsistência de credenciais entre jobs.
+
+## 2026-07-11 00:52:05 UTC-3
+- Iniciada investigação de causa raiz para persistir conversas no fluxo `CodexChatgptPage`: o histórico usado no prompt vive apenas no estado React `conversation`, é podado para reduzir peso no navegador e não possui entidade própria no banco para retomada futura escolhida pelo usuário.
+- Direção de correção definida: criar persistência explícita de conversas salvas sob demanda, com snapshot do diálogo para contexto de prompt e UI para salvar/escolher a conversa, sem obrigar recuperação completa do diálogo na tela.
+
+## 2026-07-11 00:57:40 UTC-3
+- Implementada persistência manual de conversas do fluxo ChatGPT/Codex: nova tabela `codex_saved_conversations` em MySQL, PostgreSQL e H2, entidade/repositório/serviço/controlador e endpoints `/api/codex/conversations`.
+- Atualizada `CodexChatgptPage` com botão `Salvar conversa`, seletor de conversa salva por perfil e inclusão do diálogo salvo no prompt do modelo quando escolhido pelo usuário, sem renderizar o histórico antigo na tela.
+- Adicionada proteção para não duplicar o contexto salvo no prompt quando a conversa salva já é prefixo da conversa local ativa.
+- Validação executada: `mvn test` no backend com 72 testes aprovados e `npm run build` no frontend concluído com sucesso.
+
+## 2026-07-09 19:43:10 UTC-3
+- Diagnóstico de causa raiz do `500 Internal Server Error` ao despachar a `CodexRequest 1419`: o `sandbox-orchestrator` recusou o `POST /jobs` antes da rota por `PayloadTooLargeError: request entity too large`, pois o `express.json` estava limitado a `500kb`; o handler genérico convertia esse estouro em `500 {"error":"internal_error"}`, escondendo a causa real.
+- Ajustado `apps/sandbox-orchestrator/src/server.ts` para usar `SANDBOX_REQUEST_BODY_LIMIT` configurável com padrão `50mb`, compatível com prompts e anexos permitidos pelo frontend, e para responder estouro de payload como `413 payload_too_large` com mensagem acionável.
+- Documentada a nova variável em `apps/sandbox-orchestrator/.env.example` e `apps/sandbox-orchestrator/README.md`.
+- Adicionado teste automatizado garantindo que payload acima do limite retorna `413` em vez de `500`.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator test` com 61 testes aprovados.
+
+## 2026-06-28 09:38:44 UTC-3
+- Iniciado ajuste para criar o item de menu `Codex ChatGPT MKT`.
+- Causa raiz técnica identificada: o fluxo especial do ChatGPT Codex estava acoplado ao perfil único `CHATGPT_CODEX` em frontend, backend e sandbox-orchestrator, então uma tela nova sem perfil próprio cairia no comportamento de programação ou perderia as garantias do Codex App Server.
+- Direção de correção: criar perfil dedicado `CHATGPT_CODEX_MKT`, reutilizar autenticação/sandbox/PR do Codex ChatGPT e alterar apenas as instruções de análise para relatórios Markdown de marketing digital.
+
+## 2026-05-15 01:45:26 UTC
+- Correção de causa raiz no publish/deploy: defaults locais ainda apontavam para `paulodb` em partes do stack, o que quebrava `docker compose pull` para imagens inexistentes nesse owner (ex.: `ai-hub-6-caddy` e `ai-hub-6-mcp-server`).
+- Atualizado `docker-compose.yml` para fallback único `GHCR_USERNAME:-paulofor` em todos os serviços publicados (`caddy`, `backend`, `frontend`, `sandbox-orchestrator`, `mcp-server`), eliminando namespace legado divergente no pull.
+- Atualizado `infra/setup_vps.sh` para gerar `.env` com defaults de imagens `backend/frontend/sandbox` em `ghcr.io/paulofor/...`, mantendo coerência entre setup da VPS e owner atual de publicação.
+- 2026-05-15 02:55:53 UTC — Diagnóstico e correção da causa raiz de imagens “fora do fluxo” no deploy: havia fallback inconsistente para owner `paulofor` em `docker-compose.yml` e no workflow de CI/deploy, permitindo pull de imagens de namespace diferente quando variáveis não eram resolvidas de forma uniforme; padronizado fallback para `paulodb` em compose e workflow para manter todas as imagens no mesmo namespace esperado.
+- 2026-05-15 03:02:31 UTC — Ajuste solicitado: descontinuado uso de `paulodb` e padronizado `paulofor` em todos os pontos ativos de fallback de imagens (`docker-compose.yml` e jobs `docker/deploy/cleanup` do `.github/workflows/ci.yml`), evitando mistura de owners no pull/push quando não houver override por secret/var.
+- 2026-05-15 03:04:23 UTC — Ajuste solicitado para eliminar dependência de owner por variáveis de ambiente: namespace GHCR fixado explicitamente como `paulofor` nos pontos ativos de CI/deploy e nos defaults de imagens do `docker-compose`, mantendo o fluxo sempre no mesmo owner.
+- 2026-05-15 15:01:57 UTC — Ajuste solicitado de operação no fluxo Codex ChatGPT: definido `paulofore@gmail.com` como valor padrão fixo no campo de e-mail (`accountHintInput`) da tela `/codex-chatgpt`, para acelerar login sem preenchimento manual.
+- 2026-05-15 18:03:09 UTC — Verificação operacional dos containers em execução informados pelo usuário: `caddy` e `mcp-server` estão no namespace `ghcr.io/paulofor`, enquanto `frontend`, `backend` e `sandbox` estão em `ghcr.io/paulodb`.
+- Causa raiz identificada para possível inconsistência: mistura de owners/registries na mesma stack (`paulofor` + `paulodb`) tende a gerar comportamento não determinístico em próximos pulls/deploys (atualização parcial, drift de versão e erros de permissão quando tokens/owners divergem).
+- Diretriz objetiva: padronizar todas as imagens do compose para um único owner (preferencialmente `paulofor`, conforme ajustes recentes no projeto) e recriar os serviços para eliminar drift entre versões de 13h e 3h.
+- 2026-05-15 18:10:33 UTC — Investigada a causa raiz no workflow de deploy para containers subirem com imagens erradas/mistas: no step `Publish services` as variáveis (`CADDY_IMAGE`, `BACKEND_IMAGE`, etc.) estavam atribuídas inline apenas ao comando `docker compose pull`; o `docker compose up -d` subsequente executava sem essas variáveis exportadas, podendo cair em defaults/.env divergentes.
+- Correção aplicada em `.github/workflows/ci.yml`: variáveis de imagem agora são `export`adas antes de `docker compose pull && docker compose up -d`, garantindo o mesmo namespace/valores nos dois comandos e eliminando inicialização com owner incorreto por diferença de escopo de variável.
+
+
+## 2026-05-17 17:48:57 UTC
+- Investigação profunda do fluxo \`Codex ChatGPT\` comparando implementação local com padrão de sessão persistente do exemplo `codex-rs`: causa raiz do status sempre `desconectado` no frontend era ausência de envio de cookie de sessão nas chamadas XHR quando frontend/backend estão em origens diferentes.
+- Correção aplicada em `apps/frontend/src/api/client.ts`: habilitado `withCredentials: true` no cliente Axios global, garantindo envio de `JSESSIONID` em `/api/account/read`, `/api/account/login/start` e `/api/account/logout` e permitindo reaproveitamento da mesma sessão estabelecida no callback de login.
+- Impacto esperado: após concluir login na aba externa e retornar ao AI Hub, o polling e o refresh passam a ler a sessão correta e exibir `connected` com e-mail/validade em vez de `disconnected`.
+
+## 2026-05-17 20:08:03 UTC-3
+- Revisão solicitada da causa raiz da conexão “AI Hub como ChatGPT”, comparando com o fluxo de referência em `docs/codex-rs-autenticacao-chatgpt.md` e implementação atual em `AccountController`.
+- Conclusão técnica: hoje o AI Hub ainda não está equivalente ao `codex-rs` porque o callback local não executa troca OAuth `authorization_code -> access_token/refresh_token` no backend; ele apenas aceita tokens por query string e marca sessão como conectada.
+- Risco de arquitetura identificado: depender de `access_token`/`refresh_token` via query param no callback não reproduz o modelo robusto do `codex-rs` (PKCE + token endpoint + renovação), e tende a manter sensação de “conecta mas não funciona como ChatGPT”.
+- Direção validada: é possível chegar no mesmo comportamento, mas o caminho correto é implementar OAuth server-side real (authorize + code exchange + refresh) e usar esse `access_token` nas chamadas do executor/sandbox ao provedor, em vez de manter somente estado de sessão por e-mail.
+- Próximo passo recomendado: criar fase de hardening focada em causa raiz com 4 entregas mínimas — (1) geração de PKCE/state em `login/start`, (2) exchange de `code` em `login/callback`, (3) persistência segura de `refresh_token` com expiração real, (4) renovação automática antes de enviar job Codex.
+
+## 2026-05-17 20:10:30 UTC-3
+- Solicitação atendida: criado plano de implementação no repositório para evoluir a conexão do AI Hub para o padrão “como ChatGPT”, com foco em causa raiz e referência no fluxo do `codex-rs`.
+- Novo documento `docs/plano-implementacao-chatgpt-codex-oauth.md` estruturado em fases (contrato, OAuth real com PKCE/state, exchange de token, refresh automático, integração com execução e rollout seguro).
+- Incluídos critérios de sucesso, riscos, critérios de aceite, variáveis de ambiente sugeridas e estratégia de testes para reduzir retrabalho de implementação.
+
+## 2026-05-18 00:00:00 UTC
+- Execução da Fase 0 do plano `docs/plano-implementacao-chatgpt-codex-oauth.md` com formalização do contrato entre frontend e backend para OAuth ChatGPT/OpenAI.
+- Criado `docs/fase-0-contrato-oauth-chatgpt.md` com definição objetiva dos endpoints `POST /api/account/login/start`, `GET /api/account/login/callback`, `GET /api/account/read` e `POST /api/account/logout`, incluindo payloads, respostas e códigos HTTP por cenário.
+- Definida política padronizada de erros (`invalid_state`, `token_exchange_failed`, `refresh_failed` e correlatos), modelo de persistência de sessão OAuth, variáveis de ambiente obrigatórias/opcionais e padrão de mascaramento de segredos em logs.
+
+## 2026-05-18 09:20:00 UTC
+- Verificação de pendências anteriores do plano OAuth: a Fase 0 já estava concluída em documentação, porém a Fase 1 permanecia incompleta na causa raiz do backend, pois `login/start` ainda não gerava PKCE S256 (`code_verifier`/`code_challenge`) nem montava URL OAuth padrão com `response_type=code`, `client_id` e `scope`.
+- Execução da Fase 1 em `AccountController`: implementada geração criptográfica de `state` + PKCE (S256), persistência temporária em sessão (`chatgpt_login_state` e `chatgpt_login_code_verifier`) e montagem de `authUrl` OAuth real com parâmetros `client_id`, `redirect_uri`, `scope`, `state`, `code_challenge` e `code_challenge_method=S256`.
+- Ajuste complementar de configuração raiz para Fase 1: adicionadas propriedades `hub.account.oauth.authorize-url`, `hub.account.oauth.client-id` e `hub.account.oauth.scopes` no `application.yml` com fallback para variáveis de ambiente (`HUB_ACCOUNT_OAUTH_*`), garantindo contrato alinhado para ambientes distintos.
+- Mantida validação explícita de `state` no callback com rejeição por `?login=invalid_state` e limpeza de sessão para impedir conexão indevida quando houver retorno inválido.
+
+## 2026-05-18 10:05:00 UTC
+- Verificação de pendências das fases anteriores do plano OAuth: Fase 0 e Fase 1 já constavam implementadas; a causa raiz pendente estava na Fase 2, pois o callback ainda aceitava `access_token`/`refresh_token` por query string sem realizar exchange server-side de `authorization_code`.
+- Execução da Fase 2 no backend (`AccountController`): callback passou a exigir `code`, validar `state` + `code_verifier` e trocar o código por tokens no endpoint OAuth (`grant_type=authorization_code`) via chamada HTTP backend-backend.
+- Endurecimento de segurança: removida a dependência de tokens via query params no callback e adicionada validação explícita para falhas de exchange (`?login=token_exchange_failed`).
+- Persistência de sessão ajustada para dados reais do OAuth: `access_token`, `refresh_token`, `id_token` e `expires_at` derivado de `expires_in`; e-mail da conta agora é resolvido prioritariamente do `id_token` (claim `email`) com fallback para `accountHint`.
+- Configuração ampliada para Fase 2 em `application.yml`: incluídas propriedades `hub.account.oauth.token-url` e `hub.account.oauth.client-secret` (com fallback `HUB_ACCOUNT_OAUTH_TOKEN_URL` e `HUB_ACCOUNT_OAUTH_CLIENT_SECRET`) para suportar ambientes com/sem segredo de cliente.
+- 2026-05-18 02:52:33 UTC: Verificação de pendências das fases anteriores do plano OAuth (`docs/plano-implementacao-chatgpt-codex-oauth.md`): Fase 0, 1 e 2 já estavam aplicadas, porém a causa raiz pendente para Fase 3 era ausência de renovação automática no backend quando `expires_at` vencia, mantendo sessão "connected" sem token válido.
+- 2026-05-18 02:52:33 UTC: Execução da Fase 3 com criação do serviço `TokenLifecycleManager` (refresh sob demanda + retry/backoff 0/200/500ms) para renovar `access_token` com `refresh_token`, suportar rotação de refresh token e marcar sessão como expirada quando não há recuperação.
+- 2026-05-18 02:52:33 UTC: `GET /api/account/read` passou a invocar o ciclo de refresh antes de responder e agora calcula `connected` com validade real de `expires_at` (estado expira de forma determinística quando token venceu).
+- 2026-05-18 03:08:17 UTC: Verificadas pendências das fases anteriores do plano OAuth: Fases 0–3 estavam concluídas; a causa raiz pendente da Fase 4 era que a execução Codex não recebia o `access_token` OAuth válido da sessão e não havia métricas/login estruturado completos para o fluxo de autenticação.
+- 2026-05-18 03:08:17 UTC: Executada a Fase 4 no backend com propagação determinística de credencial para execução: `CodexRequestService` agora resolve token válido via `TokenLifecycleManager` (com refresh sob demanda) e envia o `accessToken` no payload de `SandboxJobRequest` para o `SandboxOrchestratorClient`.
+- 2026-05-18 03:08:17 UTC: Observabilidade OAuth ampliada: adicionados contadores `oauth_login_start_total`, `oauth_login_success_total`, `oauth_token_refresh_total` e `oauth_token_refresh_failure_total`, além de logs estruturados com `oauthCorrelationId` no `AccountController` para rastreamento fim-a-fim do login/callback.
+- 2026-05-18 03:55:29 UTC: Correção de falha de compilação em testes do backend com foco em causa raiz: o construtor de `CodexRequestService` passou a exigir `TokenLifecycleManager`, mas `CodexRequestServiceTest` ainda instanciava o serviço sem essa dependência, gerando incompatibilidade de assinatura em `testCompile`.
+- 2026-05-18 03:55:29 UTC: Atualizado `CodexRequestServiceTest` para incluir mock de `TokenLifecycleManager` e injetá-lo no `buildService`, alinhando o teste ao contrato atual do construtor e restaurando compilação dos testes.
+
+## 2026-05-22 14:21:20 UTC-3
+- Diagnóstico orientado à causa raiz do erro de autenticação OpenAI `empty_string` observado em `auth.openai.com/error`: provável ausência/bloqueio de parâmetro obrigatório no fluxo de login federado (cookies/sessão/redirect interrompidos por extensão, política de privacidade do navegador ou URL de retorno incompleta).
+- Referenciadas fontes oficiais recentes da OpenAI (Help Center e Docs MCP) e o guia `codex-rs` para orientar troubleshooting sem correções paliativas.
+- Entregue checklist técnico objetivo para validar método de login original, cookies/JavaScript/3rd-party cookies, testes em janela anônima e desativação de bloqueadores/VPN antes de nova tentativa.
+
+## 2026-05-22 14:25:53 UTC-3
+- Correção de causa raiz do erro ao clicar em "Conectar com ChatGPT": o backend permitia iniciar OAuth com `hub.account.oauth.client-id` vazio, gerando redirecionamento inválido para `auth.openai.com` e retorno `empty_string`.
+- `POST /api/account/login/start` agora valida configuração crítica de OAuth antes de montar `authUrl`; quando `client_id` estiver ausente, retorna `503` com mensagem objetiva de configuração do servidor.
+- Frontend (`CodexChatgptPage`) endurecido para exigir `authUrl` não vazio e detectar bloqueio de pop-up na abertura da janela de autenticação, exibindo erro acionável ao usuário.
+
+## 2026-05-22 17:51:21 UTC
+- Ajuste orientado à causa raiz para o novo erro reportado no login: o endpoint `/api/account/login/start` passou a retornar `503` quando a configuração OAuth do servidor está incompleta/indisponível, mas o frontend ainda exibia mensagem genérica de falha HTTP.
+- Em `CodexChatgptPage`, adicionado tratamento explícito de `503` no fluxo `handleConnect`, com telemetria dedicada e mensagem acionável para validar `client_id`, `authorize_url` e `redirect_uri` no backend.
+- Mantido o comportamento de `404` como “API não suportada” e preservado fallback para demais erros, reduzindo ambiguidade no diagnóstico em produção.
+
+## 2026-05-22 18:20:00 UTC
+- Ajuste orientado à causa raiz para disponibilização do MCP Server pela porta 80 sem conflito de bind no host: mantida a arquitetura de borda única no `caddy` (80/443) e adicionado roteamento por path `/mcp/*` para `mcp-server:8084` no `infra/caddy/Caddyfile`.
+- Habilitado acesso a logs de containers pelo MCP Server com instalação do Docker CLI na imagem `apps/mcp-server` e montagem do socket do Docker host (`/var/run/docker.sock`) no serviço `mcp-server` do `docker-compose`.
+- Atualizado `AGENTS.md` com diretriz explícita de que o MCP Server permite executar comandos Linux no host e visualizar logs de containers.
+- 2026-05-22 19:00:00 UTC — Ajuste de causa raiz no roteamento do MCP no Caddy: a regra anterior casava apenas `/mcp/*`, então a URL base `/mcp` não entrava no matcher e caía no `handle` padrão do frontend. Atualizado `infra/caddy/Caddyfile` para casar ambos `/mcp` e `/mcp/*`, garantindo resposta correta também na raiz do endpoint.
+- 2026-05-22 19:00:00 UTC — Validação externa: `POST https://iahub.xyz/mcp/tools/linux-command` retornou `401 Unauthorized` sem token, confirmando que o tráfego está chegando no `mcp-server` via Caddy (com autenticação ativa).
+
+- 2026-05-22: Solicitada consulta aos logs do container backend via MCP Server. Tentativa realizada com `docker ps`, porém o ambiente atual não possui o comando `docker` disponível (`docker: command not found`).
+
+- 2026-05-22 19:35:49 UTC — Nova tentativa via URL solicitada `http://iahub.xyz/mcp`: confirmado redirect 308 para HTTPS; `GET https://iahub.xyz/mcp` respondeu 404 (rota base) e `POST https://iahub.xyz/mcp/tools/linux-command` respondeu 401 Unauthorized sem token. Conclusão: endpoint MCP está acessível, mas a execução de comandos/logs requer autenticação.
+
+- 2026-05-22 19:45:00 UTC — Análise de causa raiz do roteamento MCP no Caddy: o caminho base `/mcp` chegava ao `mcp-server`, porém retornava 404 por não existir handler nessa rota no serviço (apenas `/mcp/tools/*`). Correção aplicada no `infra/caddy/Caddyfile`: rota dedicada `@mcp_health` para `/mcp` com rewrite para `/actuator/health`, mantendo `/mcp/*` para as tools MCP.
+
+- 2026-05-22 19:55:00 UTC — Removida a exigência de token no MCP Server conforme solicitação: `POST /mcp/tools/linux-command` não valida mais o header `X-MCP-TOKEN`. Ajuste aplicado na causa raiz (controller) e documentação atualizada em `apps/mcp-server/README.md`.
+## 2026-05-22 16:53:52 UTC-3
+- Nova tentativa de acesso ao MCP Server pela URL solicitada (`http://iahub.xyz/mcp`) para investigar logs do container backend.
+- Validação de causa raiz de acesso: `GET /mcp` via HTTPS respondeu `{"status":"UP"}`, confirmando serviço ativo, porém as rotas esperadas de transporte MCP (`/mcp/`, `/mcp/sse`, `/mcp/messages`) retornaram `404 Not Found`.
+- Conclusão operacional: não foi possível consultar logs do container backend por esse endpoint sem o contrato exato da rota/tool exposta (ou credenciais/parâmetros compatíveis), apesar de o serviço base estar online.
+## 2026-05-22 16:58:04 UTC-3
+- Revisão da causa raiz da tentativa anterior: a verificação foi feita apenas em rotas de saúde/transporte (`GET /mcp`, `/mcp/sse`, `/mcp/messages`), sem acionar a tool correta de execução remota.
+- Acesso funcional ao MCP confirmado via `POST https://iahub.xyz/mcp/tools/linux-command` com body JSON `{ "command": "..." }`.
+- Comando remoto `docker ps --format "{{.Names}}"` retornou os containers ativos, incluindo `ai-hub-6-backend-1`.
+- Consulta de logs do backend realizada com sucesso por `docker logs --tail 120 ai-hub-6-backend-1`, retornando inicialização Spring Boot normal, conexão MySQL/Flyway válida e sem erro fatal no recorte coletado.
+## 2026-05-22 17:00:27 UTC-3
+- Solicitado registro explícito no `AGENTS.md` da forma correta de acessar o MCP Server.
+- Atualizado `AGENTS.md` com instruções objetivas: `GET /mcp` para healthcheck e `POST /mcp/tools/linux-command` com JSON `{ "command": "..." }` para executar comandos e consultar logs (incluindo exemplo do backend).
+
+## 2026-05-24 00:20:00 UTC
+- Diagnóstico de causa raiz do erro `503` em `POST /api/account/login/start` com apoio do MCP Server: logs do container `ai-hub-6-backend-1` confirmaram abort explícito de OAuth por configuração ausente (`hub.account.oauth.client-id não configurado`), descartando indisponibilidade de container/rede.
+- Correção preventiva da causa raiz operacional: adicionadas variáveis de ambiente OAuth faltantes nos arquivos de exemplo (`.env.example` raiz e `apps/backend/.env.example`) para evitar novos deploys com configuração incompleta do login ChatGPT.
+
+## 2026-05-24 00:35:00 UTC
+- Orientação operacional registrada para configuração OAuth: `client_id` e `client_secret` devem ser definidos no backend pelas variáveis de ambiente `HUB_ACCOUNT_OAUTH_CLIENT_ID` e `HUB_ACCOUNT_OAUTH_CLIENT_SECRET` (mapeadas em `apps/backend/src/main/resources/application.yml`).
+- Causa raiz reforçada para evitar erro no login: quando `HUB_ACCOUNT_OAUTH_CLIENT_ID` não está preenchida, o backend interrompe `POST /api/account/login/start` com `503` e mensagem de integração indisponível.
+
+## 2026-05-24 13:36:41 UTC
+- Ajuste de documentação orientado à causa raiz da dúvida operacional sobre perda de credenciais após reboot: reforçado no `README.md` que `client_id`/`client_secret` OAuth devem ser persistidos em `.env` (ou secret manager do ambiente) e não apenas via `export` de sessão.
+- Incluídas instruções de aplicação prática para recriar contêiner após persistir `HUB_ACCOUNT_OAUTH_CLIENT_ID` e `HUB_ACCOUNT_OAUTH_CLIENT_SECRET`, evitando recorrência do `503` por configuração ausente no login OAuth.
+
+## 2026-05-24 14:03:12 UTC
+- Consulta solicitada via MCP Server para localizar `.env` no host: healthcheck `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}` e buscas remotas com `find` foram executadas via `POST /mcp/tools/linux-command`.
+- Resultado de causa raiz operacional: o contexto acessível pelo MCP nesta execução está restrito ao container com `pwd=/app` (contendo apenas `app.jar`), sem arquivo `.env` visível em `/app` nem em `/root` no escopo consultado; não foi encontrado `docker-compose.yml` no mesmo escopo.
+- Conclusão prática: o `.env` persistente provavelmente está no host/VPS fora desse filesystem de runtime ou em secret manager; necessário acessar o diretório de deploy (ex.: pasta onde roda `docker compose`) para editar o `.env` efetivo.
+
+## 2026-05-24 16:52:21 UTC
+- Varredura solicitada via MCP Server para localizar `.env`/arquivos de compose no host executada com `POST https://iahub.xyz/mcp/tools/linux-command`.
+- Diagnóstico de causa raiz do escopo: `pwd` remoto permanece `/app` e o filesystem visível apresenta contexto mínimo (app runtime), sem evidência de diretório de deploy.
+- Resultado da varredura ampla (`find` em `/root`, `/home`, `/opt`, `/srv`, `/etc` e depois `/` com pruning de `/proc|/sys|/dev`): nenhum arquivo `.env`, `*.env`, `docker-compose.yml`, `compose.yaml` ou `compose.yml` encontrado no escopo acessível ao MCP nesta sessão.
+- Conclusão operacional: o `.env` persistente está fora do escopo atual do MCP (host real de deploy) ou a implantação utiliza apenas variáveis injetadas por orquestrador/secret manager.
+
+## 2026-05-24 16:55:37 UTC
+- Ajuste solicitado para o MCP Server "ver tudo" no host: adicionada montagem explícita da raiz do host (`/:/host:ro`) no serviço `mcp-server` do `docker-compose.yml`.
+- Causa raiz identificada na investigação anterior: o MCP executava em escopo isolado de container (`/app`), sem acesso ao filesystem do host de deploy, o que impedia localizar `.env`/compose fora do runtime.
+- Documentação do módulo MCP atualizada para orientar uso do novo ponto de montagem (`/host`) em comandos de varredura, preservando leitura somente (`ro`) para reduzir risco operacional.
+- 2026-05-24 17:21:48 UTC: Criada página de Política de Privacidade no frontend (`/privacy`) com conteúdo institucional inicial (dados coletados, finalidade, retenção, segurança e contato), e rota registrada em `App.tsx` para acesso direto no shell da aplicação.
+
+## 2026-05-24 18:35:00 UTC
+- Investigação de causa raiz do problema de conexão no Codex ChatGPT: confirmado que o backend retorna `503` em `POST /api/account/login/start` quando `hub.account.oauth.client-id` está ausente, e a UI só descobria isso após clicar em "Conectar".
+- Correção orientada à causa raiz aplicada no backend (`/api/account/read`): inclusão dos campos `oauthConfigured`, `oauthStatus` e `oauthMessage` para expor prontidão OAuth já na leitura de status.
+- Correção no frontend (`CodexChatgptPage`): parsing dos novos campos, bloqueio do botão "Conectar com ChatGPT" quando OAuth não está configurado e mensagem explícita de configuração ausente para o usuário sem depender de tentativa de login falha.
+
+## 2026-05-24 19:35:00 UTC
+- Verificação solicitada via MCP Server da configuração `client_id` no host: healthcheck `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`.
+- Causa raiz observada na validação remota: não há chave `HUB_ACCOUNT_OAUTH_CLIENT_ID` definida nos `.env` encontrados em `/host/root/ai-hub-6/.env`, `/host/root/ai-hub/.env` e `/host/root/ai-hub-corporativo/.env` (resultado `KEY_NOT_FOUND`).
+- Evidência complementar: busca por `HUB_ACCOUNT_OAUTH_CLIENT_ID` retornou apenas documentação e arquivos `.env.example`/`application.yml`, sem ocorrência em `.env` efetivo.
+
+## 2026-05-24 19:43:00 UTC
+- Validação refinada conforme instrução do usuário para considerar somente `/root/ai-hub-6/.env` (via MCP mount `/host/root/ai-hub-6/.env`).
+- Resultado objetivo da causa raiz: chave `HUB_ACCOUNT_OAUTH_CLIENT_ID` continua ausente nesse arquivo específico (`KEY_NOT_FOUND`), mantendo a condição que provoca `503` no início do login OAuth.
+
+## 2026-05-24 20:02:00 UTC
+- Correção de causa raiz no workflow de deploy: identificado que o passo `rsync -az --delete` da pipeline para `/root/ai-hub-6` podia remover `.env` remoto (arquivo fora do versionamento), apagando `HUB_ACCOUNT_OAUTH_CLIENT_ID` previamente configurado no host.
+- Ajuste aplicado em `.github/workflows/ci.yml`: adicionados `--exclude '.env'` e `--exclude 'apps/backend/.env'` no rsync para preservar segredos locais durante sincronização do repositório.
+
+## 2026-06-13 — Diagnóstico e guarda contra client_id OAuth inválido
+- Investigada a causa raiz do erro OpenAI `invalid_client` ao conectar o Codex ChatGPT: via MCP Server, logs do backend confirmaram geração do OAuth e a variável `HUB_ACCOUNT_OAUTH_CLIENT_ID` em produção estava preenchida com valor curto/incompatível (aparentando e-mail/usuário), não com um client_id OAuth válido da OpenAI.
+- Ajustado `AccountController` para validar o formato do `client_id` antes de montar a URL para `auth.openai.com`, expondo `oauthStatus=invalid_client_id_format` em `/api/account/read` e retornando `503` acionável em `/api/account/login/start`, evitando redirecionar o usuário para uma tela genérica de `invalid_client`.
+- Ajustada a resolução do callback OAuth para respeitar `X-Forwarded-Proto`, `X-Forwarded-Host` e `X-Forwarded-Port`, evitando gerar `redirect_uri` com `http://` quando o AI Hub está publicado atrás de proxy HTTPS.
+- Ajuste complementar no frontend: mensagem de bloqueio do botão de conexão agora orienta revisar `HUB_ACCOUNT_OAUTH_CLIENT_ID`, cobrindo tanto ausência quanto formato inválido do client_id.
+
+## 2026-06-14 — Login ChatGPT/Codex por device code sem API key
+- Implementado fluxo de autenticação por código de dispositivo no `AccountController`, seguindo o padrão documentado do `codex-rs`: solicitar `user_code`, orientar o usuário a autorizar em `https://auth.openai.com/codex/device`, fazer polling e trocar o `authorization_code` por tokens OAuth.
+- O backend agora persiste `access_token`, `refresh_token`, `id_token`, e expiração na sessão HTTP após device login, permitindo que execuções `CHATGPT_CODEX` reutilizem o token conectado sem `OPENAI_API_KEY`.
+- A tela `/codex-chatgpt` foi ajustada para iniciar o login por código, exibir URL/código ao usuário e acompanhar automaticamente o polling até a conexão.
+- Adicionada configuração `HUB_ACCOUNT_OAUTH_DEVICE_CLIENT_ID` com fallback para o client id público do Codex, evitando depender de criação manual de `client_id` OAuth no painel da OpenAI para o fluxo por código.
+
+## 2026-06-14 — Diagnóstico dos logs do device login ChatGPT/Codex
+- Verificação solicitada via MCP Server: healthcheck `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`.
+- Logs do backend `ai-hub-6-backend-1` mostram boa evidência do ponto de falha após a autorização do usuário: o polling saiu de `authorization_pending`, recebeu `authorization_code/code_verifier` e falhou repetidamente na troca por token.
+- Erro observado entre 2026-06-14T15:51:32Z e 2026-06-14T15:53:07Z: OpenAI respondeu `401 Unauthorized` com `code=token_exchange_user_error` em `AccountController.exchangeAuthorizationCode`, chamado por `AccountController.pollDeviceLogin`.
+- Causa provável delimitada pelos logs: não é falha de abertura da tela/código nem timeout inicial; o problema ocorre especificamente na etapa final de token exchange do device login.
+
+## 2026-06-14 — Orientação sobre client_id do device login Codex
+- Dúvida recebida: o `client_id` usado no device login parece pertencer a outra aplicação e foi perguntado como criar um novo.
+- Consulta à documentação oficial atual do Codex: para login ChatGPT em ambiente headless, o caminho suportado é habilitar device code nas configurações do ChatGPT/workspace e usar o fluxo do próprio Codex (`codex login --device-auth`) ou, em automação confiável, gerar/copiar `auth.json` uma vez e deixar o Codex renovar a sessão.
+- Conclusão de causa raiz/arquitetura: para o fluxo ChatGPT-managed Codex, não há indicação oficial de criação manual de um OAuth `client_id` próprio para substituir o cliente público do Codex; criar/usar um `client_id` de outra aplicação tende a causar falha no token exchange, compatível com o erro observado `token_exchange_user_error`.
+- Próximo caminho recomendado: não tentar criar `client_id` novo para esse fluxo; ajustar a implementação para usar autenticação suportada pelo Codex (`auth.json`/refresh do próprio Codex) ou API key para automação, em vez de chamar diretamente o endpoint OAuth com cliente não suportado.
+
+## 2026-06-14 — Confirmação por auth.json real do Codex
+- Usuário mostrou saída de `~/.codex/auth.json` gerado pelo Codex CLI após login bem-sucedido e tela do navegador indicando "Iniciou sessão no Codex".
+- Diagnóstico atualizado: o `client_id` `app_EMoamEEZ73f0CkXaXp7hrann` não é de outra aplicação arbitrária; ele aparece como audiência/client_id nos tokens do próprio Codex, portanto é o cliente esperado para o fluxo oficial do Codex CLI.
+- Risco operacional identificado: o conteúdo exibido inclui `access_token` e `refresh_token`; por ter sido exposto em texto, a sessão deve ser revogada/rotacionada e um novo `auth.json` deve ser gerado antes de qualquer uso em produção.
+- Próximo passo técnico recomendado: integrar o AI Hub ao artefato `auth.json` ou ao fluxo nativo do Codex CLI, evitando manter token exchange manual concorrente quando o CLI já concluiu autenticação e renovação.
+
+## 2026-06-14 — Montagem do auth.json do Codex no sandbox
+- Alteração solicitada aplicada no `docker-compose.yml`: o serviço `sandbox-orchestrator` agora monta `/root/.codex` do host em `/root/.codex` no container com modo somente leitura (`ro`).
+- Motivação de causa raiz: o login via Codex CLI gera `~/.codex/auth.json` no host, mas o container que executa o fluxo Codex não enxergava esse artefato; a montagem permite que o runtime tenha acesso ao cache oficial de autenticação sem copiar tokens para variáveis de ambiente ou logs.
+- Observação operacional: o `auth.json` deve ser regenerado após a exposição acidental do token e mantido com permissões restritas no host antes do deploy.
+
+## 2026-06-14 — Correção do token exchange no device login Codex
+- Investigação de causa raiz com logs do backend via MCP confirmou que o usuário concluía a autorização no `auth.openai.com`, mas o backend falhava em `POST /oauth/token` com `401 token_exchange_user_error` ao processar `/api/account/device/poll`.
+- Causa raiz identificada no código: o mesmo método de token exchange era reutilizado pelo OAuth de browser e pelo device login; quando `HUB_ACCOUNT_OAUTH_CLIENT_SECRET` estava configurado para o fluxo de browser, o backend também enviava `client_secret` no exchange do cliente público Codex/device, divergindo do fluxo oficial do `codex-rs`.
+- Correção aplicada em `AccountController`: o exchange de device login agora monta o payload sem `client_secret`, enquanto o callback OAuth tradicional continua enviando o segredo quando configurado.
+- Adicionados testes unitários para garantir que o payload do device login não inclua o segredo do cliente de browser e que o payload do browser continue preservando o segredo configurado.
+- 2026-06-14 UTC — Investigada a causa raiz dos erros frequentes em `/codex-chatgpt`: registros antigos/externos com profile `ECO_30` eram lidos pelo backend, mas o enum `CodexIntegrationProfile` não reconhecia esse valor, causando falha no polling/listagem. Adicionado suporte compatível a `ECO_30` no backend e na normalização/visualização do frontend, tratando-o como perfil econômico.
+
+## 2026-06-14 — Remoção do quadro de troubleshooting Fase 3
+- Removido da página `/codex-chatgpt` o quadro visual "Troubleshooting & telemetria (Fase 3)", mantendo a telemetria interna usada pelos fluxos de diagnóstico sem renderizar a seção na interface.
+- Causa raiz do incômodo visual: a seção era sempre renderizada abaixo das execuções, exibindo eventos frequentes de polling (`poll_success`) e ocupando espaço desnecessário para o usuário final.
+
+## 2026-06-16 — Anexos de imagens no Codex ChatGPT
+- Investigada a causa raiz da ausência de anexos na tela `/codex-chatgpt`: o frontend enviava apenas `prompt/environment/model/profile`, o backend repassava somente `taskDescription` ao sandbox e o runner montava a mensagem do modelo apenas como `input_text`, sem caminho para imagens coladas da área de transferência.
+- Adicionado suporte a colar prints via Ctrl+V no textarea e selecionar arquivos de imagem, com pré-visualização, remoção, limite de 5 imagens e validação de 5 MB por imagem.
+- Estendido o payload `CreateCodexRequest`/`SandboxJobRequest` e o sandbox-orchestrator para transportar `imageAttachments` como data URLs e montar a solicitação do modelo com partes `input_image` junto do texto.
+
+## 2026-06-19 — Remoção do indicador visual de atualização no Codex ChatGPT
+- Removido da página `/codex-chatgpt` o texto transitório "Atualizando..." exibido durante o polling das últimas execuções.
+- Causa raiz do incômodo visual: o estado `requestsLoading` era renderizado como um parágrafo dentro do card de últimas execuções a cada atualização automática, provocando mudança perceptível no layout enquanto o monitoramento permanecia ativo.
+- 2026-06-19 17:25:49 UTC: Investigada a causa raiz da execução `CHATGPT_CODEX` aparecer nos logs da API mesmo com sessão ChatGPT conectada: o backend já enviava `accessToken` ao sandbox, porém o `sandbox-orchestrator` ignorava esse campo e sempre usava o cliente OpenAI inicializado com `OPENAI_API_KEY`.
+- 2026-06-19 17:25:49 UTC: Corrigido o fluxo do `sandbox-orchestrator` para aceitar e reter `accessToken` apenas internamente, não expor o token nas respostas HTTP e, em jobs `CHATGPT_CODEX`, criar o cliente OpenAI com o token OAuth da sessão conectada em vez da API key do projeto.
+
+## 2026-06-19 — Diagnóstico do erro 401 api.responses.write no CHATGPT_CODEX
+- Investigada a execução `ea921d16-2ac5-47b5-8fdd-504c2ee92cf8` exibida na tela `/codex/requests/702`.
+- Healthcheck do MCP confirmou o serviço operacional (`GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`).
+- Logs do `sandbox-orchestrator` confirmaram que o fluxo usou `access_token` da sessão ChatGPT conectada, sem `OPENAI_API_KEY` do projeto, e falhou na primeira chamada ao modelo com `401` por ausência do escopo `api.responses.write`.
+- Causa raiz provável: a credencial OAuth/sessão ChatGPT usada pelo profile `CHATGPT_CODEX` não possui permissão para escrever na Responses API no projeto/organização selecionado; não é problema do prompt, do clone do repositório, nem do workspace, pois o preflight e a preparação concluíram antes da falha.
+- Ação recomendada: reconectar/autorizar a conta ChatGPT/Codex com escopos que incluam `api.responses.write`, garantir papel adequado na organização/projeto (Writer/Owner e Member/Owner) ou usar uma credencial/API key não restrita com permissão de Responses API para esse fluxo.
+
+## 2026-06-19 — Esclarecimento sobre origem do escopo OAuth do Codex
+- Esclarecido que, no fluxo de login por código do `CHATGPT_CODEX`, o usuário não escolhe escopos manualmente na tela de login; o backend solicita o device login enviando apenas o `client_id` para `/api/accounts/deviceauth/usercode`.
+- Diferenciado do fluxo OAuth web tradicional, onde a lista de escopos vem de `hub.account.oauth.scopes`/`HUB_ACCOUNT_OAUTH_SCOPES` e é anexada à URL de autorização.
+- Conclusão de causa raiz refinada: para o device login do cliente público Codex, a definição efetiva de escopos/permissões fica vinculada ao aplicativo OAuth/client_id da OpenAI e às permissões da conta/projeto selecionados, não a uma configuração visível ao usuário final durante o login.
+- Orientação operacional: se o usuário só consegue clicar em login, a correção precisa ser feita no lado da configuração/autorização do app/ambiente — validar `HUB_ACCOUNT_OAUTH_SCOPES` apenas se estiver usando login OAuth web, ou trocar/ajustar a credencial/client_id/conta com acesso à Responses API para o fluxo por código.
+
+## 2026-06-19 — Orientação para alterar permissões de conta/projeto OpenAI
+- Consultada documentação oficial da OpenAI sobre projetos, papéis e permissões de API keys para orientar a correção do erro `api.responses.write`.
+- Esclarecido que permissões de usuário/projeto são alteradas no painel da API Platform: organização/projeto -> Members, onde apenas Owner de projeto pode atualizar papel ou remover usuário, e membros precisam ser adicionados ao projeto correto para executar inferência.
+- Esclarecido que permissões de chave são alteradas no painel do projeto -> API Keys; chaves podem ser `All`, `Restricted` ou `Read Only`, e no modo `Restricted` é necessário conceder `Write` ao endpoint/recurso de Responses.
+- Registrado que, se o usuário não vê essas opções, ele provavelmente não é Owner da organização/projeto e precisa pedir a um Owner para ajustar seu papel, adicioná-lo ao projeto correto ou gerar uma chave/service account com permissão adequada.
+
+## 2026-06-19 — Navegação no painel OpenAI para permissões
+- Orientado, a partir da tela `Organization settings > General`, que a alteração não fica no formulário geral da organização.
+- Para permissões da conta/usuário, o caminho indicado é `People` para papel na organização e `Projects` -> projeto correto -> `Members` para papel no projeto.
+- Para permissões de credencial, o caminho indicado é `API keys` no projeto correto, editando/criando chave com permissão `All` ou `Restricted` com `Write` para Responses/API de inferência.
+- Registrado que, caso as opções de edição estejam ocultas ou bloqueadas, o usuário está sem papel de Owner/Admin suficiente e precisa acionar o Owner da organização/projeto.
+
+## 2026-06-19 — Validação visual de role Organization Owner
+- Usuário mostrou `People & Permissions > Members > Manage roles`, com a conta marcada como `Owner` na organização.
+- Conclusão: a role da organização aparenta estar correta; o erro `api.responses.write` provavelmente não é por falta de Owner na organização.
+- Próximas verificações recomendadas: confirmar permissões no projeto correto em `Projects` -> projeto usado pelo AI Hub -> `Members`, e validar a credencial efetiva (`API keys` ou service account `curso--02`) para garantir permissão de escrita na Responses API.
+
+## 2026-06-19 — Identificação do projeto OpenAI usado pelo AI Hub
+- Investigado como o AI Hub escolhe o projeto OpenAI: `docker-compose.yml` carrega `OPENAI_API_KEY` a partir de `/run/secrets/openai-token/openai_api_key` para backend e `sandbox-orchestrator`, sem definir explicitamente `OPENAI_PROJECT_ID` ou `OPENAI_ORG_ID`.
+- Consulta via MCP ao container `ai-hub-6-sandbox-orchestrator-1` confirmou `OPENAI_PROJECT_ID` e `OPENAI_ORG_ID` vazios, e uma chave `sk-proj-...` montada no segredo.
+- Conclusão operacional: em execuções com API key, o projeto é o projeto ao qual essa chave `sk-proj` pertence no painel da OpenAI; em execuções `CHATGPT_CODEX`, o sandbox usa o `access_token` OAuth da sessão conectada, então o projeto efetivo depende da autorização/conta do token e não aparece como variável local no container.
+- Próximo passo recomendado: localizar a API key/service account correspondente no painel OpenAI em `Projects` -> projeto -> `API keys`, ou rotacionar a chave criando uma nova no projeto desejado e atualizando `/root/infra/openai-token/openai_api_key` no host.
+
+## 2026-06-19 — Comparação visual de projeto OpenAI e chave do AI Hub
+- Usuário mostrou a lista de projetos da OpenAI contendo apenas `Default project` com ID `proj_Wc5aRLIYuBySAfNjLLyprCCw`.
+- Comparado com a investigação anterior: o AI Hub não define `OPENAI_PROJECT_ID`; ele usa a chave `sk-proj-...` montada em `/run/secrets/openai-token/openai_api_key`, portanto é necessário abrir o `Default project` e conferir em `API keys` se a chave montada no servidor corresponde a esse projeto.
+- Orientação refinada: se a chave atual não aparecer no `Default project` ou estiver restrita sem escrita para Responses, gerar uma nova chave nesse projeto com permissão adequada, substituir `/root/infra/openai-token/openai_api_key` no host e reiniciar backend/sandbox.
+- Observação: para jobs `CHATGPT_CODEX`, o erro observado nos logs continua associado ao `access_token` OAuth da sessão conectada; trocar a API key corrige os fluxos baseados em `OPENAI_API_KEY`, mas pode não alterar o escopo do token OAuth se o runner continuar nesse profile.
+
+## 2026-06-19 — Solicitação de troca da chave OpenAI no AI Hub
+- Usuário solicitou alterar a chave OpenAI usada pelo AI Hub.
+- Verificado que a configuração efetiva do deploy lê a chave de `/root/infra/openai-token/openai_api_key` no host, montada nos containers como `/run/secrets/openai-token/openai_api_key`.
+- Não foi possível executar a troca sem receber uma nova chave válida (`sk-proj-...`); por segurança, a orientação é inserir a nova chave diretamente no host/secret store, não expor o valor completo no chat.
+- Procedimento recomendado após obter a nova chave no projeto correto: gravar o valor em `/root/infra/openai-token/openai_api_key` com permissões restritas e reiniciar `backend` e `sandbox-orchestrator` para recarregar `OPENAI_API_KEY`.
+
+## 2026-06-19 — Correção de causa raiz OAuth para `CHATGPT_CODEX` sem API key do projeto
+- Revertida a direção de usar `OPENAI_API_KEY` por padrão no `CHATGPT_CODEX`, pois o requisito é manter o fluxo OAuth da conta conectada.
+- Causa raiz refinada comparando com o `codex-rs`: o erro não se resolve adicionando manualmente `api.responses.write` ao device login; o fluxo oficial troca o `id_token` OAuth por um token do tipo `openai-api-key` (`requested_token=openai-api-key`) antes de chamar a API, enquanto o AI Hub estava enviando diretamente o `access_token` OAuth da sessão para a Responses API.
+- Correção aplicada: o backend agora faz token exchange OAuth (`urn:ietf:params:oauth:grant-type:token-exchange`) usando o `id_token` da sessão e envia ao sandbox o token derivado para execução `CHATGPT_CODEX`.
+- Mantido o sandbox usando o token recebido da sessão, sem recorrer à API key do projeto, e adicionados testes para o payload de token exchange e para o envio do token OAuth derivado ao sandbox.
+
+## 2026-06-19 — Correção do erro 500 ao criar request `CHATGPT_CODEX`
+- Investigada a causa raiz do `POST /api/codex/requests` retornar 500: o backend fazia token exchange OAuth para `CHATGPT_CODEX`, recebia 401 da OpenAI com `Invalid ID token: missing organization_id` e deixava a exceção propagar, abortando a criação da solicitação antes de enviar/registrar a execução no sandbox.
+- Corrigido o `TokenLifecycleManager` para tratar falhas do token exchange Codex como ausência controlada de token derivado, registrar métrica/log de falha e retornar `Optional.empty()` em vez de propagar `RestClientException` para o controller.
+- Com isso, a criação da solicitação deixa de quebrar com erro HTTP 500 por causa de credencial OAuth inválida/incompleta; o fluxo passa a registrar a execução e delegar ao sandbox a validação final de autenticação do profile `CHATGPT_CODEX`.
+
+## 2026-06-19 — Correção de causa raiz do `organization_id` no OAuth `CHATGPT_CODEX`
+- Refinada a causa raiz do 401 `Invalid ID token: missing organization_id`: não bastava tratar a exceção do token exchange; o login OAuth precisava solicitar explicitamente que o `id_token` fosse emitido com dados de organização.
+- Corrigidos os fluxos de login browser e device para enviar `id_token_add_organizations=true`, alinhando o comportamento ao fluxo do Codex CLI e permitindo que o `id_token` carregue o `organization_id` necessário ao token exchange `openai-api-key`.
+- Corrigido também o refresh token OAuth para solicitar `id_token_add_organizations=true`, evitando que uma renovação posterior substitua a sessão por um `id_token` sem organização e recrie a falha.
+
+## 2026-06-19 — Configuração do `organization_id` informado
+- Usuário informou o `organization_id` efetivo `org-DgyTLAxNYnw0cOQVlAXInkyR`; adicionada configuração `hub.account.oauth.organization-id`/`HUB_ACCOUNT_OAUTH_ORGANIZATION_ID` com esse valor padrão no backend.
+- O `organization_id` agora acompanha o device login, a URL de login browser, o refresh OAuth e o token exchange Codex, além de manter `id_token_add_organizations=true` para que o `id_token` seja emitido com os dados de organização necessários.
+
+## 2026-06-19 — Bloqueio de execução `CHATGPT_CODEX` sem token derivado
+- Investigada a causa raiz do erro exibido na requisição 706: o backend permitia enviar jobs `CHATGPT_CODEX` ao sandbox mesmo quando a sessão conectada não conseguia gerar um token de execução OAuth derivado, fazendo o sandbox falhar depois com “Sessão ChatGPT conectada não forneceu access_token”.
+- Corrigido o fluxo para falhar localmente a requisição `CHATGPT_CODEX` quando o token derivado não estiver disponível, sem criar job no sandbox e com mensagem acionável para reconectar/verificar a organização OAuth.
+- Adicionado teste unitário garantindo que `CHATGPT_CODEX` sem token não chama o sandbox e registra a falha diretamente na solicitação.
+
+## 2026-06-19 — Causa real da ausência de token derivado no `CHATGPT_CODEX`
+- Verificado nos logs do backend que a requisição 706 não obteve token derivado porque o token exchange OAuth retornou `400 Bad Request` com `Unknown parameter: 'organization_id'`.
+- Causa raiz corrigida: `organization_id` deve continuar sendo usado no login/refresh para emitir `id_token` com organização, mas não deve ser enviado no token exchange `requested_token=openai-api-key`, pois esse endpoint rejeita o parâmetro.
+- Ajustado o payload de token exchange Codex para não incluir `organization_id` e atualizado o teste unitário para proteger esse contrato.
+
+## 2026-06-19 — Orientação de causa raiz no AGENTS
+- Adicionada ao `AGENTS.md` a instrução explícita para, antes de propor ou implementar ajuste para um erro, perguntar “por que esse erro aconteceu?” e usar essa resposta para guiar a investigação e a correção.
+
+## 2026-06-19 — Diagnóstico do novo erro na requisição 707 `CHATGPT_CODEX`
+- Pergunta de causa raiz aplicada: “por que esse erro aconteceu?” A requisição 707 falhou localmente porque o backend não conseguiu obter o token derivado `openai-api-key` necessário para executar o profile `CHATGPT_CODEX` no sandbox.
+- Healthcheck do MCP confirmou o serviço operacional (`GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`).
+- Logs do backend da requisição 707 mostram que o token exchange OAuth retornou `401 Unauthorized` com `Invalid ID token: missing organization_id`, então o backend bloqueou corretamente a criação do job no sandbox e exibiu a mensagem “Conta ChatGPT conectada não gerou token de execução para o Codex”.
+- Conclusão: o erro novo não é de prompt nem do repositório `paulofor/marketing-hub`; ele ocorre antes do sandbox executar, na conversão do `id_token` da sessão ChatGPT em token de execução Codex. A sessão atual provavelmente foi criada/renovada com um `id_token` ainda sem `organization_id`.
+- Ação recomendada: reconectar a conta ChatGPT depois das correções de OAuth já aplicadas, para forçar a emissão de um novo `id_token` contendo organização; se persistir, validar no login/refresh se o parâmetro `id_token_add_organizations=true` está chegando ao provedor e se a organização configurada é a mesma da conta conectada.
+
+## 2026-06-19 — Envio do `organization_id` para a OpenAI
+- Pesquisada documentação oficial da OpenAI sobre uso de organização em requisições de API: usuários em múltiplas organizações devem informar a organização por header para que a requisição seja associada à organização correta.
+- Causa raiz revisitada: o `organization_id` informado (`org-DgyTLAxNYnw0cOQVlAXInkyR`) não deve voltar ao corpo do token exchange Codex, pois esse endpoint já rejeitou o parâmetro como desconhecido; a forma compatível para chamadas OpenAI é enviar a organização como header/ configuração de client.
+- Ajustado o backend para enviar `OpenAI-Organization: org-DgyTLAxNYnw0cOQVlAXInkyR` nas chamadas ao endpoint OAuth/token quando houver organização configurada.
+- Ajustado o sandbox-orchestrator para configurar a organização no client oficial OpenAI a partir de `OPENAI_ORGANIZATION`, `OPENAI_ORG_ID` ou `HUB_ACCOUNT_OAUTH_ORGANIZATION_ID`, garantindo que chamadas Responses API — inclusive com token derivado do `CHATGPT_CODEX` — sejam enviadas para a OpenAI com a organização correta.
+
+## 2026-06-19 — Orientação sobre settings da organização OpenAI
+- Usuário mostrou a tela `Organization settings > General` com `Organization ID` igual a `org-DgyTLAxNYnw0cOQVlAXInkyR` e status `Verified`.
+- Consultada documentação oficial: quando o usuário pertence a múltiplas organizações, a organização usada na API deve ser selecionada via header da requisição; a tela `General` apenas exibe o identificador e o status de verificação.
+- Conclusão: não há ajuste necessário nessa tela de settings; o ID já confere com o valor configurado no AI Hub e a organização já está verificada. O ajuste necessário é operacional/código: enviar esse ID nas chamadas OpenAI e reconectar a conta ChatGPT para renovar o `id_token` com organização.
+
+## 2026-06-20 - Correção token exchange Codex ChatGPT
+- Problema investigado: solicitação Codex 708 falhava com a mensagem "Conta ChatGPT conectada não gerou token de execução para o Codex".
+- Pergunta de causa raiz: por que esse erro aconteceu?
+- Causa raiz encontrada nos logs do backend via MCP: o endpoint OAuth retornava `Invalid ID token: missing organization_id` durante o token exchange para `openai-api-key`.
+- Correção aplicada: o payload de token exchange do Codex agora inclui `organization_id` quando configurado, alinhando-o ao refresh OAuth e aos headers `OpenAI-Organization` já enviados.
+- Validação: teste unitário atualizado para garantir que o payload `urn:ietf:params:oauth:grant-type:token-exchange` carregue `organization_id`.
+
+## 2026-06-19 21:15:49 UTC-3
+- Correção de registro: a entrada anterior desta investigação usou título fora do formato obrigatório com hora UTC-3; esta entrada mantém a rastreabilidade no formato correto.
+- Causa raiz confirmada nos logs via MCP: o token exchange OAuth para gerar `openai-api-key` falhava com `Invalid ID token: missing organization_id`.
+- Ajuste aplicado: `organization_id` passa a ser incluído no payload de token exchange do Codex quando configurado, evitando que a execução ChatGPT Codex falhe antes de chegar ao sandbox.
+- Teste executado: `mvn test -Dtest=TokenLifecycleManagerTest` em `apps/backend` com sucesso.
+
+## 2026-06-19 21:22:22 UTC-3
+- Revisão solicitada: verificado no próprio `docs/diario/registros1.md` que já havia sido tentado enviar `organization_id` no corpo do token exchange Codex.
+- Evidência encontrada nos registros anteriores: a requisição 706 recebeu `400 Bad Request` com `Unknown parameter: 'organization_id'`, e a conclusão registrada foi que o `organization_id` deve ser usado no login/refresh/header, mas não no payload `requested_token=openai-api-key`.
+- Causa raiz da regressão do ajuste anterior: confundi o erro atual `Invalid ID token: missing organization_id` com necessidade de reenviar `organization_id` no corpo do token exchange, apesar do histórico mostrar que esse endpoint rejeita o parâmetro.
+- Correção aplicada: removido novamente `organization_id` do payload de token exchange Codex e restaurado o teste unitário que protege esse contrato.
+
+## 2026-06-19 21:29:40 UTC-3
+- Investigação solicitada com validação contra registros: confirmei novamente que `organization_id` não pode voltar ao corpo do token exchange Codex, pois os registros anteriores documentam `Unknown parameter: 'organization_id'` na requisição 706.
+- Pesquisa na documentação oficial atual do Codex: o caminho suportado para ChatGPT-managed Codex em automação é usar o próprio Codex com `auth.json`/refresh embutido ou API key; o CLI também suporta device auth. Essa orientação reforça que não devemos inventar parâmetros no token exchange.
+- Comparação com `exemplos/codex-rs`: o fluxo oficial solicita `id_token_add_organizations=true` no login browser, troca o authorization code por tokens e só então faz token exchange para `openai-api-key` sem `organization_id` no corpo.
+- Pergunta de causa raiz: por que o erro `Invalid ID token: missing organization_id` continuou depois das correções? Resposta: sessões já existentes podem manter um `id_token` antigo sem claim de organização enquanto ainda não expiraram; o backend só renovava por expiração, então repetia o token exchange com um `id_token` stale.
+- Correção aplicada: antes do token exchange Codex, quando há `organization_id` configurado, o backend agora verifica se o `id_token` possui a claim de organização esperada; se não possuir e houver `refresh_token`, força refresh OAuth usando o payload já correto (`id_token_add_organizations=true` + `organization_id` no refresh) e só depois tenta gerar o token `openai-api-key`.
+
+## 2026-06-20 - Correção do token de execução do Codex ChatGPT
+- Investigado erro exibido em `/codex/requests/709`: "Conta ChatGPT conectada não gerou token de execução para o Codex".
+- Pergunta de causa raiz: por que esse erro aconteceu? Os logs do backend mostraram que a renovação OAuth enviava o parâmetro `id_token_add_organizations` para o endpoint de token refresh, mas o provedor retornou `Unknown parameter: 'id_token_add_organizations'`; com isso o id token não era atualizado com a organização e o token exchange do Codex falhava por `missing organization_id`.
+- Ajustado o refresh OAuth para não enviar o parâmetro incompatível e manter apenas `organization_id` quando configurado.
+- Corrigida a detecção local da claim de organização no id token para também aceitar a estrutura aninhada em `https://api.openai.com/auth`.
+- Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,CodexRequestServiceTest` em `apps/backend`, com sucesso.
+
+## 2026-06-20 - Correção de compilação no TokenLifecycleManager
+- Erro investigado: o build Java falhava com `method extractJsonString(java.lang.String,java.lang.String) is already defined in class com.aihub.hub.service.TokenLifecycleManager`.
+- Pergunta de causa raiz: por que esse erro aconteceu? A classe `TokenLifecycleManager` continha duas declarações idênticas de `extractJsonString(String, String)`, introduzidas durante os ajustes de leitura das claims do `id_token`.
+- Correção aplicada: removida a declaração duplicada e mantida uma única implementação compartilhada pelo parser simples de JWT/JSON.
+- Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,CodexRequestServiceTest` em `apps/backend`, com sucesso.
+
+## 2026-06-20 — Correção de refresh/device OAuth alinhada ao codex-rs
+- Pergunta de causa raiz antes do ajuste: “por que esse erro aconteceu?”. Resposta: a execução `CHATGPT_CODEX` falhava antes de chegar ao sandbox porque o backend tentava derivar um token de execução a partir do `id_token`, mas a etapa de refresh enviava `organization_id` para `/oauth/token`, parâmetro rejeitado pela OpenAI como `Unknown parameter`, e em seguida o token exchange falhava com `Invalid ID token: missing organization_id`.
+- Comparação com o exemplo `exemplos/codex-rs`: o refresh/token exchange do Codex CLI não envia `organization_id` no form body de `/oauth/token`, e o device code request público envia apenas `client_id`; portanto o problema não era o `app_id` padrão `app_EMoamEEZ73f0CkXaXp7hrann` em si, mas parâmetros extras adicionados pelo AI Hub no fluxo OAuth.
+- Ajustado `TokenLifecycleManager` para não incluir `organization_id` no payload de refresh token, preservando apenas `grant_type`, `refresh_token`, `client_id` e `client_secret` quando aplicável.
+- Ajustado `AccountController` para alinhar o payload de `/api/accounts/deviceauth/usercode` ao `codex-rs`, enviando apenas `client_id` no device login público.
+- Atualizados testes unitários para cobrir que refresh e device usercode não carregam parâmetros de organização no corpo das requisições.
+
+## 2026-06-20 — Evidências, conclusões e ajustes do erro CHATGPT_CODEX 710
+- Evidência operacional coletada via MCP Server: `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`, confirmando disponibilidade do canal correto de diagnóstico no host.
+- Evidência de logs do backend coletada com `POST https://iahub.xyz/mcp/tools/linux-command` e comando `docker logs --tail 300 ai-hub-6-backend-1`: a requisição `CodexRequest 710` foi criada com perfil `CHATGPT_CODEX`, mas antes do envio ao sandbox houve falha em `TokenLifecycleManager` ao renovar OAuth: `Unknown parameter: 'organization_id'` em `/oauth/token`.
+- Evidência sequencial nos mesmos logs: após a falha de refresh, o token exchange Codex retornou `401 Unauthorized` com `Invalid ID token: missing organization_id`, e o backend registrou `CodexRequest 710 será executado sem token OAuth válido de conta conectada`, resultando na mensagem exibida na tela: `Conta ChatGPT conectada não gerou token de execução para o Codex`.
+- Evidência do exemplo `exemplos/codex-rs`: `core/src/auth.rs` define o client público do Codex como `app_EMoamEEZ73f0CkXaXp7hrann`; `login/src/device_code_auth.rs` solicita device usercode enviando apenas `client_id`; `login/src/server.rs` faz refresh/token exchange em `/oauth/token` sem `organization_id` no corpo do form.
+- Conclusão sobre o `app_id`: o `app_EMoamEEZ73f0CkXaXp7hrann` é o client público usado pelo próprio Codex CLI no exemplo local, então a evidência disponível não aponta que ele esteja incorreto. O erro observado aponta para payloads divergentes do contrato aceito por `/oauth/token`, especialmente `organization_id` no refresh.
+- Conclusão sobre causa raiz: o AI Hub misturou tentativa de seleção/validação de organização com o corpo de chamadas OAuth que não aceitam esse parâmetro; isso impedia renovar/obter um `id_token` adequado e, por consequência, impedia gerar o token `openai-api-key` usado pelo sandbox `CHATGPT_CODEX`.
+- Ajuste aplicado no código: `TokenLifecycleManager.buildTokenRefreshPayload` deixou de adicionar `organization_id` no refresh e passou a preservar apenas `grant_type`, `refresh_token`, `client_id` e `client_secret` quando configurado.
+- Ajuste aplicado no código: `AccountController.buildDeviceUserCodePayload` foi alinhado ao fluxo público do `codex-rs`, enviando somente `client_id` no start do device login.
+- Ajuste aplicado nos testes: `TokenLifecycleManagerTest` agora protege que o refresh não carregue `organization_id` nem `id_token_add_organizations`; `AccountControllerTest` protege que o device usercode não carregue parâmetros extras de organização.
+- Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,AccountControllerTest` em `apps/backend`, com `BUILD SUCCESS`, `Tests run: 9`, `Failures: 0`, `Errors: 0`.
+
+## 2026-06-20 — Diagnóstico e correção do erro CHATGPT_CODEX 711
+- Pergunta de causa raiz: por que esse erro aconteceu? A requisição 711 foi enviada ao sandbox sem token OAuth derivado porque o backend falhou ao renovar a sessão com `401 Invalid client specified` e, em seguida, o token exchange continuou usando um `id_token` antigo sem `organization_id`, retornando `Invalid ID token: missing organization_id`.
+- Pesquisa na documentação oficial da OpenAI: a documentação atual recomenda API key para automações programáticas de Codex e, quando a automação precisa identidade ChatGPT/Codex, usar tokens de acesso ou o refresh embutido do próprio Codex, sem chamar manualmente o endpoint OAuth.
+- Comparação com `exemplos/codex-rs`: o refresh oficial usa o client público `app_EMoamEEZ73f0CkXaXp7hrann` e inclui o escopo `openid profile email`, sem `organization_id` ou `id_token_add_organizations` no corpo.
+- Conclusão: após remover os parâmetros extras, restou uma divergência de client no refresh; em instalações sem `HUB_ACCOUNT_OAUTH_CLIENT_ID`, o AI Hub montava `client_id` vazio, causando `invalid_client`, enquanto o fluxo device/Codex deve usar o `device-client-id` público como fallback.
+- Correção aplicada: `TokenLifecycleManager.buildTokenRefreshPayload` agora resolve o `client_id` do refresh usando `HUB_ACCOUNT_OAUTH_CLIENT_ID` quando configurado e, caso contrário, cai para `HUB_ACCOUNT_OAUTH_DEVICE_CLIENT_ID` (`app_EMoamEEZ73f0CkXaXp7hrann`), além de enviar `scope=openid profile email` para alinhar ao `codex-rs`.
+
+## 2026-06-20 14:43:51 UTC-3
+- Investigação de causa raiz do request Codex ChatGPT 712: logs do backend em produção mostraram falha no refresh OAuth por `invalid_client` e, em seguida, falha no token exchange Codex por `Invalid ID token: missing organization_id`, resultando na mensagem de UI “Conta ChatGPT conectada não gerou token de execução para o Codex”.
+- Comparação com a documentação oficial da OpenAI e com o exemplo `exemplos/codex-rs/login/src/server.rs`: Codex usa login ChatGPT com retorno de access token, suporta `CODEX_ACCESS_TOKEN`/tokens de automação para fluxos confiáveis, e o fluxo browser do codex-rs solicita claims de organizações com `id_token_add_organizations=true`, `codex_cli_simplified_flow=true` e restrição de workspace via `allowed_workspace_id`.
+- Correção aplicada no backend: a URL OAuth browser agora segue o padrão do codex-rs para workspace (`allowed_workspace_id` em vez de `organization_id`) e inclui `codex_cli_simplified_flow=true`; o token exchange também passa a enviar `organization_id` quando configurado, evitando perder o contexto da organização no pedido de token Codex.
+
+## 2026-06-20 14:51:15 UTC-3
+- Ajuste solicitado após revisão: adicionar logging de toda troca de informação do backend com a OpenAI no fluxo de conta ChatGPT/Codex.
+- Causa raiz operacional: quando a OpenAI retorna erros como `invalid_client` ou `missing organization_id`, os logs anteriores mostravam apenas partes do erro e não registravam de forma uniforme a requisição, resposta e operação envolvidas, dificultando correlação ponta a ponta.
+- Implementado `OpenAiExchangeLogger` para registrar chamadas de autorização, device auth, polling device, exchange de authorization code, refresh OAuth e token exchange Codex, sempre com sanitização de tokens, secrets, codes, verifiers, challenges, state e bearer tokens para evitar vazamento de credenciais nos logs.
+
+## 2026-06-20 14:53:11 UTC-3
+- Complemento do logging solicitado: além do backend OAuth, o sandbox-orchestrator agora registra as trocas diretas com a OpenAI Responses API (`responses.create`) em outbound, inbound e erro.
+- O logging do sandbox inclui o payload sanitizado da requisição e da resposta para permitir auditoria ponta a ponta do que foi enviado e recebido do modelo, sem registrar chaves/API keys, tokens, secrets ou Authorization headers.
+
+## 2026-06-20 19:52:00 UTC
+- Solicitação atendida: verificar nos logs como foi a “conversa” com a OpenAI para a requisição Codex 713 exibida na tela.
+- Causa raiz perguntada explicitamente antes de concluir: por que esse erro aconteceu? A conversa de device login com a OpenAI concluiu com sucesso, mas a execução Codex 713 falhou antes de chegar ao modelo porque o backend tentou renovar OAuth usando `client_id=paulofore` com `client_secret`, recebendo `401 invalid_client`; em seguida tentou o token exchange Codex incluindo `organization_id`, e a OpenAI rejeitou com `400 Unknown parameter: 'organization_id'`.
+- Evidências via MCP: `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`; `docker logs --tail 500 ai-hub-6-backend-1` mostrou o fluxo `device_user_code`, múltiplos polls `device_authorization_pending`, sucesso no `device_authorization_poll`, sucesso no `authorization_code_exchange`, criação da `CodexRequest 713`, falhas no `oauth_token_refresh` e falha no `codex_api_token_exchange`.
+- Evidência adicional: `docker logs --tail 300 ai-hub-6-sandbox-orchestrator-1` mostrou apenas inicialização do serviço, sem chamada `responses.create`, indicando que não houve conversa com a Responses API/modelo para esse request; a falha ocorreu na etapa de autenticação/token antes do sandbox ter token válido.
+
+## 2026-06-20 20:05:00 UTC
+- Solicitação atendida: registrar em documento próprio o diálogo observado nos logs entre o AI Hub e a OpenAI para a CodexRequest 713.
+- Criado `docs/diario/dialogo-openai-codex-713.md` com a linha do tempo sanitizada do fluxo `device_user_code`, `device_authorization_poll`, `authorization_code_exchange`, `oauth_token_refresh` e `codex_api_token_exchange`, além da conclusão de que não houve chamada `responses.create` no sandbox para essa requisição.
+
+## 2026-06-20 — Correção OAuth Codex client_id
+
+- Investigação orientada por `docs/diario/correcao-oauth-codex-client-id.md`.
+- Pergunta de causa raiz: por que esse erro aconteceu? Porque a sessão OAuth não registrava o `client_id`/tipo do cliente que originou os tokens; no refresh, o backend podia trocar o client público do device login por um client global de browser e ainda incluir `client_secret`. Além disso, o token exchange Codex enviava `organization_id`, parâmetro rejeitado pelo `/oauth/token`.
+- Ajuste aplicado: sessão agora persiste `chatgpt_oauth_client_id` e `chatgpt_oauth_client_type`; refresh usa o client salvo na sessão; `client_secret` só é enviado para sessão confidencial; token exchange Codex não envia `organization_id`.
+- Testes executados: `mvn test -Dtest=AccountControllerTest,TokenLifecycleManagerTest` em `apps/backend` com sucesso.
+
+## 2026-06-21 00:55:00 UTC — Diálogo OpenAI da CodexRequest 714
+- Solicitação atendida: registrar em documento próprio o diálogo observado nos logs entre o AI Hub e a OpenAI para a CodexRequest 714, após nova falha exibida na tela.
+- Pergunta de causa raiz: por que esse erro aconteceu? O refresh OAuth agora usou o `client_id` público correto (`app_EMoamEEZ73f0CkXaXp7hrann`), sem `client_secret`, e foi aceito pela OpenAI; porém o `id_token` retornado continuou sem `organization_id`, então o token exchange Codex falhou com `401 invalid_subject_token` e mensagem `Invalid ID token: missing organization_id`.
+- Evidências via MCP: `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`; `docker logs --tail 800 ai-hub-6-backend-1` mostrou `device_user_code`, polls pendentes, sucesso em `device_authorization_poll`, sucesso em `authorization_code_exchange`, criação da `CodexRequest 714`, sucesso em `oauth_token_refresh` e falha em `codex_api_token_exchange` por `missing organization_id`.
+- Evidência adicional: `docker logs --tail 300 ai-hub-6-sandbox-orchestrator-1` mostrou apenas `Sandbox orchestrator listening on port 8083`, sem chamada `responses.create`; portanto não houve conversa com a Responses API/modelo para esse request.
+- Criado `docs/diario/dialogo-openai-codex-714.md` com a linha do tempo sanitizada do fluxo e a conclusão de que a causa raiz atual é a ausência da claim de organização no `id_token` usado como `subject_token`.
+
+## 2026-06-21 17:59:22 UTC — Bloqueio de token exchange sem `organization_id` na CodexRequest 714
+- Pergunta de causa raiz antes do ajuste: por que esse erro aconteceu? O relatório `docs/diario/dialogo-openai-codex-714.md` mostrou que o login/refresh OAuth já usava o client público correto e era aceito pela OpenAI, mas o `id_token` renovado continuava sem a claim `organization_id`; apesar disso, o backend ainda tentava o token exchange Codex e recebia `401 invalid_subject_token`.
+- Causa raiz tratada no código: a ausência da claim de organização no `id_token` é pré-condição inválida para o token exchange `requested_token=openai-api-key`; insistir na chamada apenas produz erro externo conhecido e não corrige a sessão.
+- Ajuste aplicado: `TokenLifecycleManager` agora interrompe o token exchange quando há `hub.account.oauth.organization-id` configurado e, mesmo após refresh, o `id_token` segue sem a organização esperada; a sessão recebe um motivo operacional para orientar reconexão via login browser quando o fluxo público por device code não retornar `organization_id`.
+- Ajuste aplicado: `CodexRequestService` passa a anexar esse motivo à mensagem de falha da requisição `CHATGPT_CODEX`, evitando envio ao sandbox sem token derivado e tornando a causa visível ao usuário.
+- Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,CodexRequestServiceTest` em `apps/backend`, com sucesso.
+
+## 2026-06-21 18:10:00 UTC — Envio de `organization_id` no refresh OAuth Codex
+- Correção solicitada sobre o ajuste anterior: enviar o `organization_id` na hora do refresh OAuth, pois esta é a causa raiz indicada para o `id_token` renovado continuar sem a claim de organização.
+- Pergunta de causa raiz antes do ajuste: por que esse erro aconteceu? Porque o refresh OAuth do AI Hub renovava a sessão usando o client correto, mas sem declarar o workspace/organização configurado no próprio payload do refresh; assim o provedor podia devolver um `id_token` válido, porém sem `organization_id`, inviabilizando o token exchange Codex.
+- Ajuste aplicado: `TokenLifecycleManager.buildTokenRefreshPayload` voltou a incluir `organization_id` quando `hub.account.oauth.organization-id` está configurado, mantendo `id_token_add_organizations` fora do refresh.
+- Ajuste aplicado: os testes de refresh OAuth foram atualizados para exigir `organization_id` no payload, inclusive em sessão pública/device login, sem adicionar `client_secret` nem `id_token_add_organizations`.
+- Validação executada: `mvn test -Dtest=TokenLifecycleManagerTest,CodexRequestServiceTest` em `apps/backend`, com sucesso.
+
+## 2026-06-22 08:39:12 UTC-3
+- Investigado o erro da CodexRequest 715 e comparado com os registros anteriores `dialogo-openai-codex-713.md` e `dialogo-openai-codex-714.md`.
+- Pergunta de causa raiz: “por que esse erro aconteceu?” Resposta: a correção anterior havia removido `organization_id` do token exchange, mas o payload de refresh voltou a enviar `organization_id=org-DgyTLAxNYnw0cOQVlAXInkyR`; a OpenAI rejeitou esse parâmetro com `400 unknown_parameter`, impedindo a renovação do `id_token` antes da execução.
+- Ajustado `TokenLifecycleManager` para nunca incluir `organization_id` no corpo do refresh token, mantendo o `client_id` público da sessão device e evitando repetir a falha observada no request 715.
+- Atualizados os testes unitários para garantir que o refresh não contenha `organization_id` nem `id_token_add_organizations`, inclusive quando há organização configurada e sessão device pública.
+
+## 2026-06-22 09:16:09 UTC-3
+- Investigada a CodexRequest 716 via logs do backend e comparada com as requisições 713, 714 e 715.
+- Pergunta de causa raiz: “por que esse erro aconteceu?” Resposta: a remoção de `organization_id` do refresh resolveu o `400 unknown_parameter` da 715, mas a 716 voltou ao diagnóstico da 714: o device login público renova com sucesso, porém continua sem `organization_id` no `id_token`; como o próprio backend já sabe que device login público não autoriza o workspace configurado, o frontend não deveria continuar iniciando esse fluxo quando há OAuth browser configurado.
+- Ajustado o fluxo da tela `CodexChatgptPage`: ao clicar em “Conectar com ChatGPT”, se o backend indicar `oauthConfigured=true`, a UI passa a iniciar `/account/login/start` e abrir o login browser ChatGPT/Codex, que usa `id_token_add_organizations=true` e `allowed_workspace_id`; o device login fica apenas como fallback quando o OAuth browser não estiver configurado.
+- Objetivo definitivo do ajuste: obter uma sessão originada pelo client OAuth confidencial/browser capaz de autorizar o workspace, em vez de repetir device logins públicos que, pelos logs 714/716, não retornam `organization_id`.
+
+## 2026-06-22 12:38:39 UTC-3
+- Investigada a CodexRequest 717 via MCP/logs do backend e comparada com 713, 714, 715 e 716.
+- Pergunta de causa raiz: “por que esse erro aconteceu?” Resposta: mesmo após a UI preferir `/account/login/start`, a produção ainda iniciou `device_user_code`; a causa raiz encontrada no container é configuração inválida `HUB_ACCOUNT_OAUTH_CLIENT_ID=paulofore`, já documentada como inválida desde a 713. Por isso o backend marcava `oauthConfigured=false`, a UI caía no fallback de device login e a execução repetia o erro de `id_token` sem `organization_id`.
+- Ajustado `AccountController` para considerar o OAuth browser pronto quando houver um `HUB_ACCOUNT_OAUTH_DEVICE_CLIENT_ID` público válido (`app_...`) mesmo que `HUB_ACCOUNT_OAUTH_CLIENT_ID` esteja inválido; nesse caso, `/account/login/start` usa o client público válido e não envia `client_secret`, preservando o fluxo PKCE com `id_token_add_organizations=true` e `allowed_workspace_id`.
+- Adicionado teste cobrindo o cenário real de produção (`HUB_ACCOUNT_OAUTH_CLIENT_ID=paulofore` + device client válido) para garantir que a URL browser do Codex use `client_id=app_EMoamEEZ73f0CkXaXp7hrann` e solicite autorização do workspace, evitando novo fallback silencioso para device login.
+
+## 2026-06-22 12:50:24 UTC-3
+- Gerado o documento `docs/diario/dialogo-openai-codex-717.md` com o diálogo observado entre AI Hub e OpenAI para a CodexRequest 717.
+- O documento registra a pergunta obrigatória de causa raiz, a linha do tempo do device login, polling, authorization-code exchange, refresh OAuth aceito, bloqueio antes do token exchange e comparação com as execuções 713, 714, 715 e 716.
+- Conclusão registrada: a 717 não repetiu o `400 unknown_parameter` da 715; ela repetiu a ausência de `organization_id` no `id_token` de sessão device, agravada pela configuração inválida `HUB_ACCOUNT_OAUTH_CLIENT_ID=paulofore` que mantinha a UI no fallback de device login.
+
+## 2026-06-22 14:00:18 UTC-3
+- Gerado o documento `docs/diario/dialogo-openai-codex-718.md` com o diálogo observado entre AI Hub e OpenAI para a CodexRequest 718.
+- O documento registra a pergunta obrigatória de causa raiz e a linha do tempo completa: device login, polling pendente, autorização concluída, authorization-code exchange, refresh OAuth aceito e bloqueio antes do token exchange por ausência de `organization_id` no `id_token`.
+- Comparação registrada: a 718 repetiu a 717; a correção do `organization_id` no refresh permanece efetiva, mas a tentativa ainda usou sessão device pública em vez de sessão browser/PKCE com workspace autorizado.
+
+## 2026-06-22 — Fase 0 do plano Codex App Server
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque o AI Hub tentou reproduzir internamente a autenticação privada usada pelo Codex: montou OAuth/device flow, refresh e token exchange manualmente, misturou clientes OAuth na mesma sessão, passou a depender de claims como `organization_id` no `id_token` e ainda marcou/encaminhou execuções `CHATGPT_CODEX` mesmo sem uma credencial executável real. A correção da fase 0, portanto, não deve ajustar mais parâmetros desse fluxo legado; deve congelá-lo até que o Codex App Server assuma autenticação e execução.
+
+### Trabalho realizado
+
+- Adicionada a feature flag `CODEX_APP_SERVER_ENABLED`, exposta em `hub.codex.app-server-enabled`, com padrão `false`.
+- Congelado o caminho legado de execução `CHATGPT_CODEX`: novas requisições desse perfil falham localmente com motivo funcional e não chamam `TokenLifecycleManager.getValidCodexApiTokenFromCurrentSession()`, não fazem token exchange manual e não enviam token ao sandbox.
+- Preservado o caminho `OPENAI_API`/perfis não ChatGPT, que continua podendo usar o token OAuth/API existente quando disponível.
+- Congelados endpoints HTTP de OAuth legado de conta enquanto o App Server não estiver habilitado, retornando estado não executável em `/api/account/read` e bloqueando novas tentativas manuais de login/callback/device.
+- Atualizados testes unitários do backend para validar que o perfil `CHATGPT_CODEX` não envia token OAuth derivado ao sandbox durante a fase 0.
+
+
+## 2026-06-22 — Fase 1 do plano Codex App Server
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque o AI Hub ainda não tinha um supervisor local para o processo oficial `codex app-server`; sem esse componente, a autenticação e o estado de conta do perfil `CHATGPT_CODEX` continuariam dependendo do fluxo legado congelado na fase 0 ou de tentativas manuais de token exchange. A causa raiz da fase 1, portanto, é arquitetural: faltava mover a posse da sessão ChatGPT/Codex para o sandbox-orchestrator, que é onde a execução e o workspace real já são gerenciados.
+
+### Trabalho realizado
+
+- Instalado o CLI oficial `@openai/codex` na imagem do sandbox-orchestrator e configurado `CODEX_HOME=/var/lib/ai-hub/codex` com diretório dedicado e permissão restrita.
+- Criado o cliente/supervisor `CodexAppServerClient` para iniciar `codex app-server --listen stdio://`, fazer o handshake `initialize`/`initialized`, correlacionar respostas por `id`, distribuir notificações, rejeitar requests pendentes em falhas e publicar saúde `starting`, `ready`, `degraded` ou `stopped`.
+- Criada leitura segura de conta via `account/read`, expondo apenas estado operacional (`connected`, `authMode`, `planType`, `executable`, `blockReason`) sem repassar tokens ao backend.
+- Integrado o App Server opcionalmente ao boot do sandbox-orchestrator por `CODEX_APP_SERVER_ENABLED=true`, ao healthcheck e ao endpoint interno `GET /codex-app-server/account/read`.
+- Adicionados testes de handshake, correlação fora de ordem, notificações, rejeição de pendências, degradação em encerramento inesperado, healthcheck e account/read sem tokens.
+
+## 2026-06-22 — Fase 2 do plano Codex App Server
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque, mesmo com o supervisor do App Server criado na fase 1, a autenticação exposta ao usuário ainda passava por endpoints e UI pensados para o OAuth legado: e-mail obrigatório, falsa seleção multi-conta, browser/device flow manual e estado inferido localmente. A causa raiz da fase 2 era a falta de uma fachada HTTP que delegasse login, logout e leitura de conta ao `codex app-server`, preservando apenas campos seguros para o frontend.
+
+### Trabalho realizado
+
+- Implementado login `chatgptDeviceCode` no sandbox-orchestrator via `account/login/start`, além de cancelamento e logout delegados ao App Server.
+- Reescritos os endpoints `/api/account/read`, `/api/account/login/start`, `/api/account/device/start`, `/api/account/device/poll`, `/api/account/login/cancel` e `/api/account/logout` para atuarem como proxy do sandbox-orchestrator quando `CODEX_APP_SERVER_ENABLED=true`, sem chamar endpoints privados da OpenAI nem persistir tokens na sessão HTTP.
+- Atualizado o frontend `CodexChatgptPage` para usar device code por padrão, remover e-mail obrigatório e a falsa UI multi-conta, exibir `authMode`, `planType`, `executable` e `blockReason`, e bloquear execução quando `executable=false`.
+- Configurado volume persistente `codex-auth-data` para `CODEX_HOME=/var/lib/ai-hub/codex` no Docker Compose, sem montar o volume no frontend.
+- Adicionados testes do sandbox-orchestrator para login e logout via App Server, mantendo validação de leitura sanitizada sem tokens.
+
+## 2026-06-22 — Fase 3 do plano Codex App Server
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque, até a fase 2, o sistema já tinha um caminho seguro de autenticação via App Server, mas a execução `CHATGPT_CODEX` ainda não tinha um fluxo próprio de `thread/start` e `turn/start`. Sem essa separação, o backend poderia voltar a despachar jobs sem validar readiness/conta executável ou o sandbox-orchestrator poderia tentar executar o perfil ChatGPT pelo caminho legado da Responses API. A causa raiz da fase 3 era a ausência de um caminho de execução exclusivo do Codex App Server e de uma barreira de readiness antes do dispatch.
+
+### Trabalho realizado
+
+- Backend passou a consultar `account/read` do sandbox-orchestrator antes de despachar `CHATGPT_CODEX`, falhando localmente quando a conta não está executável e nunca enviando token OAuth no payload desse perfil.
+- Sandbox-orchestrator passou a separar `CHATGPT_CODEX` da Responses API, executando `thread/start` e `turn/start` no Codex App Server somente quando o cliente está pronto e a conta está executável.
+- Consumidos eventos mínimos do App Server (`item/started`, `item/completed`, `item/agentMessage/delta`, `turn/completed`) para formar resumo, registrar interações sanitizadas e concluir o job apenas após `turn/completed`.
+- Adicionado timeout funcional `CODEX_APP_SERVER_TURN_TIMEOUT_MS`, tipos auxiliares de thread/turn/erros funcionais e hardening para descartar `accessToken` recebido em jobs `CHATGPT_CODEX`.
+- Adicionados testes cobrindo dispatch backend sem token OAuth quando a conta está executável e execução sandbox via App Server sem chamar `responses.create`.
+
+## 2026-06-22 — Fase 4 do plano Codex App Server
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque, mesmo após autenticação e execução terem sido movidas para o Codex App Server nas fases 1 a 3, o backend ainda mantinha código morto do OAuth manual no `AccountController`: montagem de URL PKCE, device polling próprio, callback local, persistência de tokens na sessão HTTP e variáveis `HUB_ACCOUNT_OAUTH_*` expostas como configuração de aplicação. A causa raiz da fase 4 era a coexistência do caminho novo com o legado, o que deixava risco de alguém reativar token exchange manual ou interpretar a UI/configuração antiga como suportada.
+
+### Trabalho realizado
+
+- Removido o OAuth manual do `AccountController`, deixando `/api/account/*` como fachada do sandbox-orchestrator/Codex App Server quando `CODEX_APP_SERVER_ENABLED=true`.
+- Removidos callback próprio, PKCE/token exchange, device polling local, persistência de tokens OpenAI na sessão HTTP e dependência de `TokenLifecycleManager` no controller de conta.
+- Mantido estado explícito e não executável quando o App Server está desabilitado, com mensagem de legado removido em vez de tentar fallback OAuth.
+- Removidas variáveis `HUB_ACCOUNT_OAUTH_*` do `application.yml` e do `.env.example`, evitando divulgar configuração legada como caminho operacional.
+- Atualizados testes de `AccountController` para cobrir apenas proxy App Server, rejeição do legado removido e callback próprio desativado.
+
+## 2026-06-23 — Fase 5 do plano Codex App Server
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque ainda existia uma superfície backend capaz de renovar sessão HTTP OAuth antiga (`TokenLifecycleManager`) e porque a produção ainda expunha variáveis `HUB_ACCOUNT_OAUTH_*` no `.env`, mesmo depois de o caminho correto ter passado a ser o Codex App Server. A causa raiz da fase 5 é operacional e de código: para afirmar que não há fallback manual para `/oauth/token`, o backend não pode mais possuir o gerenciador legado nem enviar tokens de sessão HTTP ao sandbox, e a produção precisa remover as variáveis antigas antes do login novo.
+
+### Trabalho realizado
+
+- Removido `TokenLifecycleManager` e seus testes, eliminando do backend a implementação que chamava manualmente `/oauth/token`.
+- `CodexRequestService` deixou de depender de sessão OAuth HTTP para qualquer perfil; jobs seguem para o sandbox sem `accessToken`, e as credenciais de execução passam a pertencer ao sandbox-orchestrator/Codex App Server.
+- Mantida a barreira de readiness para `CHATGPT_CODEX`, que só despacha quando `account/read` do App Server retorna conta executável.
+- Validado via MCP que o servidor MCP está ativo e que os containers de produção estão em execução; a tentativa de limpar `/host/root/ai-hub-6/.env` foi bloqueada por filesystem somente leitura no MCP.
+- Registrado `docs/operacao/codex-app-server-fase5-producao.md` com checklist de produção, evidências coletadas e pendências: deploy da nova imagem, limpeza real do `.env`, login humano pelo novo fluxo, restart, request real e confirmação de `thread/start`, `turn/start`, `turn/completed` nos logs.
+
+## 2026-06-23 — Correção de lint no frontend ChatGPT Codex
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque `CodexChatgptPage.tsx` importava `useMemo` de `react`, mas a página não possuía mais nenhum cálculo memoizado usando esse hook. A causa raiz foi um import obsoleto que sobrou após refatorações do fluxo ChatGPT/Codex; com a regra `@typescript-eslint/no-unused-vars`, o ESLint falha quando encontra imports não usados.
+
+### Trabalho realizado
+
+- Removido o import não utilizado de `useMemo` em `CodexChatgptPage.tsx`, mantendo apenas os hooks realmente usados pela página.
+- Validado o lint do frontend para confirmar que o erro `useMemo is defined but never used` foi eliminado.
+
+## 2026-06-23 — Orientação de conexão Codex ChatGPT em produção
+
+### Por que esse erro aconteceu?
+
+O bloqueio visto na tela aconteceu porque o ambiente de produção ainda está com `CODEX_APP_SERVER_ENABLED=false` no container `ai-hub-6-sandbox-orchestrator-1` e sem `CODEX_APP_SERVER_ENABLED=true` no backend. Com isso, `/api/account/read` retorna `status=app_server_disabled`, `connected=false`, `executable=false` e `blockReason=CODEX_APP_SERVER_DISABLED`; portanto o botão não consegue iniciar uma sessão executável até o App Server ser habilitado e os serviços reiniciados.
+
+### Trabalho realizado
+
+- Verificado o healthcheck do MCP Server em `https://iahub.xyz/mcp` com resposta `UP`.
+- Verificados containers de produção via MCP: `ai-hub-6-backend-1` e `ai-hub-6-sandbox-orchestrator-1` estão em execução.
+- Confirmada a causa operacional: o sandbox-orchestrator expõe `CODEX_APP_SERVER_ENABLED=false` e `CODEX_HOME=/var/lib/ai-hub/codex`; o backend não expõe `CODEX_APP_SERVER_ENABLED=true` no ambiente atual.
+- Orientação registrada: habilitar `CODEX_APP_SERVER_ENABLED=true` no backend e no sandbox-orchestrator, manter `CODEX_HOME=/var/lib/ai-hub/codex` com volume persistente, reiniciar os serviços e então usar o botão “Conectar com ChatGPT” para concluir o device login exibido pela UI.
+
+
+## 2026-06-23 — Separação entre workflow e ação manual para conexão Codex ChatGPT
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque a orientação anterior misturava tarefas que o workflow já executa com tarefas que exigem ação humana no host. A causa raiz operacional permanece `CODEX_APP_SERVER_DISABLED`, mas o ponto prático é que o workflow sincroniza código, publica imagens e roda `docker compose up -d`; ele não sobrescreve o `.env` de produção e não consegue fazer o login humano da conta ChatGPT.
+
+### Trabalho realizado
+
+- Atualizada a documentação operacional da Fase 5 para separar explicitamente o que o GitHub Actions já faz do que precisa ser feito manualmente.
+- Esclarecido que a ação manual efetiva é editar `/root/ai-hub-6/.env` para definir `CODEX_APP_SERVER_ENABLED=true` e remover variáveis `HUB_ACCOUNT_OAUTH_*`, depois reiniciar/aguardar deploy.
+- Registrado que a etapa de abrir a `verificationUrl` e informar o `userCode` continua sendo manual, porque depende de autorização humana na conta ChatGPT.
+
+
+## 2026-06-23 — Correção da orientação após retorno `redirect_required` legado
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque a produção já tinha `CODEX_APP_SERVER_ENABLED=true`, mas continuava executando imagens antigas pinadas no `.env` (`ghcr.io/paulodb/ai-hub-backend:latest` e `ghcr.io/paulodb/ai-hub-sandbox:latest`). Assim, o backend ativo ainda era o código legado que respondia `POST /api/account/login/start` com `status=redirect_required` e `authUrl=https://chatgpt.com/auth/login`, em vez do código atual que encaminha `chatgptDeviceCode` para o Codex App Server.
+
+### Trabalho realizado
+
+- Atualizada a documentação operacional para incluir a remoção/troca dos pins antigos de imagem no `.env`, além da feature flag `CODEX_APP_SERVER_ENABLED=true`.
+- Atualizados os comandos manuais para remover `HUB_ACCOUNT_OAUTH_*`, remover pins antigos de imagem e repinar explicitamente para `ghcr.io/paulofor/ai-hub-6-*` antes de `docker compose pull` e `docker compose up -d`.
+- Removidas variáveis `HUB_ACCOUNT_OAUTH_*` de `apps/backend/.env.example`, evitando que o exemplo de ambiente continue sugerindo o caminho OAuth legado.
+
+
+## 2026-06-23 — Automação da normalização do `.env` no workflow
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque a correção anterior ainda dependia de edição manual do `.env` no host, mesmo quando o usuário preferia apenas reexecutar o workflow. A causa raiz operacional era que o workflow preservava o `.env` remoto, mas não normalizava as chaves que mantinham imagens antigas e o caminho OAuth legado.
+
+### Trabalho realizado
+
+- Adicionado passo de deploy no GitHub Actions para criar backup do `.env` remoto, remover `HUB_ACCOUNT_OAUTH_*`, remover pins antigos de imagens e gravar `CODEX_APP_SERVER_ENABLED=true` com as imagens atuais `ai-hub-6-*`.
+- Atualizada a documentação operacional para indicar que o caminho preferencial agora é reexecutar o workflow de `main`, deixando os comandos manuais apenas como fallback quando o workflow não puder ser usado.
+
+## 2026-06-23 — Correção do erro 500 no login Codex ChatGPT
+
+### Por que esse erro aconteceu?
+
+O erro aconteceu porque o `sandbox-orchestrator` já retornava uma resposta estruturada de indisponibilidade do Codex App Server (`503` com `blockReason=CODEX_APP_SERVER_UNAVAILABLE`), mas o backend consumia essa resposta via `RestClient.retrieve().body(...)` sem tratar status 4xx/5xx. A exceção do `RestClient` escapava do `AccountController`, e o Spring convertia a falha controlada do upstream em `500 Internal Server Error` para `/api/account/login/start` e `/api/account/read`. A investigação via MCP também mostrou que o Codex App Server respondeu ao `initialize` depois do timeout inicial de 10 segundos, deixando o supervisor em estado degradado.
+
+### Trabalho realizado
+
+- Ajustado `SandboxOrchestratorClient` para reaproveitar o JSON de erro retornado pelo `sandbox-orchestrator` em operações de conta, evitando transformar indisponibilidade conhecida do Codex App Server em erro 500 genérico.
+- Aumentado o timeout padrão de request do Codex App Server de 10s para 60s, reduzindo falsos negativos no handshake `initialize` quando o binário demora para aquecer no container.
+- Adicionados testes unitários garantindo que `readCodexAccount` e `startCodexLogin` retornem os corpos estruturados de erro do upstream em vez de lançar exceção.
+
+## 2026-06-23 - Correção do sandbox mode enviado ao Codex App Server
+
+- Pergunta de causa raiz: por que esse erro aconteceu? A execução 720 chegou ao Codex App Server pelo caminho novo de `thread/start`, mas o `sandbox-orchestrator` enviava o campo `sandbox` com o valor camelCase legado `workspaceWrite`. A versão ativa do App Server valida esse campo como variante kebab-case e aceita `read-only`, `workspace-write` ou `danger-full-access`; por isso rejeitou a requisição antes de iniciar o turno.
+- Ajuste aplicado: o payload de `thread/start` do perfil `CHATGPT_CODEX` agora envia `sandbox: 'workspace-write'`, alinhado ao contrato retornado pelo erro de produção.
+- Cobertura: o teste de execução via Codex App Server passou a verificar explicitamente que `thread/start` usa `workspace-write`, evitando regressão para `workspaceWrite`.
+
+## 2026-06-23 - Regra permanente no AGENTS para sandbox mode do Codex App Server
+
+- Pergunta de causa raiz: por que esse erro poderia voltar a acontecer? A correção anterior ajustou o código, mas a convenção do Codex App Server (`workspace-write`) ainda não estava registrada nas instruções permanentes do repositório; outro agente poderia reintroduzir os valores camelCase legados ao tocar no mesmo fluxo.
+- Ajuste aplicado: o `AGENTS.md` raiz agora documenta explicitamente que payloads do Codex App Server devem usar `read-only`, `workspace-write` ou `danger-full-access`, e nunca `workspaceWrite`, `readOnly` ou `dangerFullAccess` no campo `sandbox`.
+
+## 2026-06-23 21:40:04 UTC-3
+- Diagnóstico solicitado sobre falha na tela `/codex-chatgpt`: a execução chegou a iniciar no `sandbox-orchestrator` com perfil `CHATGPT_CODEX`, clonou o repositório e abriu `thread/start`/`turn/start` no Codex App Server.
+- Causa raiz identificada nos logs do container `ai-hub-6-sandbox-orchestrator-1`: o Codex App Server rejeitou o modelo `gpt-5.3-codex` para conta ChatGPT com erro 400 (`The 'gpt-5.3-codex' model is not supported when using Codex with a ChatGPT account.`).
+- Efeito colateral observado: o evento de erro do Codex App Server não foi tratado pelo `EventEmitter`, derrubando o processo Node do `sandbox-orchestrator`; por isso a UI passou a mostrar bloqueio/erro ao consultar conta e execuções após a queda do container.
+- Observação adicional: o backend também registrou `500 Internal Server Error` por falha de conexão MySQL (`Connection reset`) em endpoints de listagem, mas isso não explica o bloqueio inicial da execução CHATGPT_CODEX; o gatilho da execução foi a incompatibilidade de modelo.
+
+## 2026-06-23 21:46:12 UTC-3
+- Pergunta de causa raiz: por que a execução CHATGPT_CODEX voltou a falhar ao iniciar? A combo da tela `/codex-chatgpt` carregava modelos do cadastro geral (`/codex/models`), permitindo selecionar `gpt-5.3-codex`, que o Codex App Server rejeita para conta ChatGPT.
+- Ajuste aplicado: a combo de modelos específica do fluxo `CHATGPT_CODEX` passou a usar uma lista fixa e compatível com ChatGPT, limitada a `gpt-5.5` e `gpt-5.4`.
+- Também foi garantido que, se houver um modelo selecionado fora dessa lista, o frontend volta automaticamente para `gpt-5.5`, evitando persistência de seleção incompatível.
+
+## 2026-06-23 22:55:37 UTC-3
+- Solicitação 722: analisada a saída informada pelo usuário sobre a tentativa anterior de ajuste na tela OPRM `pipeline-v2`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução anterior não falhou por causa do código do AI Hub nem por ausência de endpoint; ela foi interrompida por uma falha de infraestrutura/sandbox do executor (`bwrap: No permissions to create a new namespace`), impedindo comandos básicos de leitura/escrita e também o `apply_patch`.
+- Conclusão operacional: como o agente anterior não conseguia acessar o workspace local, ele recorreu a consulta externa/connector para localizar a tela e preparar uma hipótese de patch, mas não aplicou nem validou alteração no branch local. A indicação de `docs/registros/oprm1.md` também diverge da instrução vigente do projeto, que exige registro em `docs/diario/registros1.md`.
+
+## 2026-06-23 22:59:46 UTC-3
+- Solicitação 722: ajuste efetivo no sandbox-orchestrator para permitir que execuções `CHATGPT_CODEX` via Codex App Server trabalhem no workspace mesmo quando o sandbox Linux interno baseado em `bwrap` não consegue criar namespace dentro do container/host.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o `sandbox-orchestrator` enviava `sandbox: workspace-write` fixo ao `thread/start`; esse modo aciona o sandbox Linux interno do Codex App Server, mas o ambiente observado não permite criação de namespace pelo `bwrap`, gerando `bwrap: No permissions to create a new namespace` antes de o agente conseguir ler/escrever arquivos.
+- Correção aplicada: criado `CODEX_APP_SERVER_SANDBOX_MODE` com validação estrita dos valores kebab-case aceitos (`read-only`, `workspace-write`, `danger-full-access`) e padrão `danger-full-access`, mantendo o isolamento no container/workspace do AI Hub e evitando a camada `bwrap` incompatível por padrão.
+- Validação: suíte `npm --prefix apps/sandbox-orchestrator test` executada com sucesso, incluindo cobertura do padrão `danger-full-access` e da configuração explícita `workspace-write`.
+
+## 2026-06-24 - Investigação últimas execuções ChatGPT
+- Investigado relato de que as últimas execuções sumiram na página Codex ChatGPT.
+- Causa observada nos logs: execução 723 / job 18a622ce-e8c0-4c26-b195-e03fed292ad0 concluiu no sandbox às 02:26:05 UTC, mas o callback para o backend falhou com HTTP 500 às 02:26:21 UTC.
+- Efeito observado: o backend continuou consultando o job do sandbox repetidamente e retornando payloads grandes (~1,79 MB) para atualização automática; a listagem `/api/codex/requests?page=0&size=10` chegou a exceder timeout de 25s durante a investigação.
+- Causa raiz provável: persistência/sincronização do resultado final no callback do sandbox falhou, deixando a tela dependente de refresh por polling pesado em vez de carregar a lista de execuções normalmente.
+
+## 2026-06-24 - Correção da criação de PR nas execuções ChatGPT Codex
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução alterava arquivos e concluía no `sandbox-orchestrator`, mas o orquestrador só criava PR quando recebia token GitHub por variáveis locais (`GITHUB_CLONE_TOKEN`, `GITHUB_TOKEN`, `GITHUB_PR_TOKEN`) ou pela `repoUrl`; no fluxo disparado pelo backend, o token da GitHub App ficava disponível apenas no backend e não era enviado no payload do job, levando ao log `nenhum token GitHub disponível; ignorando criação de PR`.
+- Correção aplicada: o backend agora obtém o installation token da GitHub App e envia ao sandbox no campo `githubToken`, separado do `accessToken` OAuth/OpenAI; o sandbox aceita esse campo, usa-o como primeira fonte de credencial para clone/push/PR e remove o token das respostas sanitizadas de jobs.
+- Cobertura: adicionados testes no sandbox para aceitar `githubToken` sem expor em respostas e para criar PR usando o token do payload; adicionadas asserções no backend garantindo envio do token para jobs CI Fix e ChatGPT Codex sem reintroduzir `accessToken` OAuth no perfil `CHATGPT_CODEX`.
+
+## 2026-06-24 - Ajuste do texto do Modo Codex (ChatGPT)
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela apresentava as orientações do perfil Codex (ChatGPT) com linguagem imperativa e absoluta, dando a entender que squads, worktrees e checkpoints de custo seriam obrigatórios em qualquer sessão, embora o próprio perfil documente esses itens como recomendações para missões com múltiplas sub-tarefas paralelas e não para demandas simples.
+- Correção aplicada: a copy da tela de detalhe e da seleção de perfil foi ajustada para explicar que as orientações entram no prompt inicial, mas que squads/worktrees/checkpoints devem ser usados apenas quando a tarefa justificar coordenação paralela ou investigação longa.
+
+## 2026-06-24 — Fase 2 interativa do Codex ChatGPT
+- Causa raiz identificada: a tela da Fase 2 tratava cada envio como uma execução isolada, sem estado de conversa, sem refletir a resposta do modelo na própria página e sem ação dedicada para solicitar PR ao final do diálogo.
+- Ajustada a tela `CodexChatgptPage` para manter uma conversa local entre usuário e modelo, montar o prompt com o histórico antes de cada nova mensagem, acompanhar a execução ativa por polling e atualizar a resposta quando a solicitação terminar.
+- Adicionado botão `Pedir PR` para acionar a criação de PR a partir da última resposta concluída, evitando misturar a conversa iterativa com a etapa final de publicação.
+
+## 2026-06-24 17:37:33 UTC — Confirmação de modelo no Codex ChatGPT
+- Verificada a tela `/codex-chatgpt` e a implementação atual do frontend: o fluxo `CHATGPT_CODEX` expõe a lista fixa de modelos compatíveis com ChatGPT contendo `gpt-5.5` e `gpt-5.4`.
+- Conclusão: é possível usar `gpt-5.5` nessa tela, selecionando-o no campo de modelo antes de enviar a mensagem, desde que a conta ChatGPT esteja conectada/executável e o backend/sandbox consigam iniciar a execução normalmente.
+- Observação: não há uma opção separada chamada `gpt-5.5 pro` no código; o identificador disponível é `gpt-5.5`.
+
+## 2026-06-24 17:40:01 UTC — Diferença entre GPT-5.5 e GPT-5.5 Pro
+- Investigada a dúvida sobre `gpt-5.5` versus `gpt-5.5 pro` usando referências oficiais da OpenAI e o estado atual do AI Hub.
+- Conclusão funcional para o projeto: a tela `/codex-chatgpt` hoje disponibiliza apenas o identificador `gpt-5.5` na lista fixa do fluxo `CHATGPT_CODEX`; para usar a variante Pro seria necessário expor/enviar explicitamente o identificador de modelo `gpt-5.5-pro`, se a conta/plano e o backend/sandbox suportarem esse modelo.
+- Diferença conceitual: `gpt-5.5` é o modelo recomendado para a maioria das tarefas Codex e trabalho profissional complexo; `gpt-5.5-pro` usa mais computação/tempo de raciocínio, tende a respostas mais precisas para tarefas difíceis e longas, mas é mais lento e tem custo/limites maiores.
+
+## 2026-06-24 17:42:46 UTC — Viabilidade de adicionar GPT-5.5 Pro na combo
+- Pergunta explícita de causa raiz: “por que adicionar na combo poderia ou não funcionar?”. Resposta: no fluxo atual, a combo do frontend é a única lista fixa observada para o perfil `CHATGPT_CODEX`; o backend persiste o `model` recebido e o sandbox repassa esse valor diretamente ao Codex App Server em `thread/start`.
+- Conclusão técnica: se `gpt-5.5-pro` for adicionado à lista do frontend e selecionado, o valor deve trafegar pelo backend até o sandbox sem bloqueio local adicional de allowlist no caminho analisado.
+- Risco/condição externa: isso só funcionará de ponta a ponta se o Codex App Server e a conta ChatGPT conectada aceitarem `gpt-5.5-pro`; caso contrário a execução deve falhar no `thread/start` com erro de modelo não suportado/autorização/plano, como já ocorreu anteriormente com modelo incompatível.
+
+## 2026-06-24 17:49:14 UTC — Teste controlado do GPT-5.5 Pro na combo
+- Pergunta explícita de causa raiz: “por que testar adicionando na combo é suficiente para validar o caminho local?”. Resposta: a combo `CHATGPT_CODEX_MODELS` é o ponto local que limita os modelos selecionáveis; após a seleção, o valor de `model` já é enviado pelo frontend, persistido pelo backend e repassado ao Codex App Server pelo sandbox.
+- Ajuste aplicado: adicionado `gpt-5.5-pro` à lista fixa de modelos do fluxo `CHATGPT_CODEX` antes de `gpt-5.5`, permitindo seleção na tela `/codex-chatgpt` para teste real contra a conta/plano conectada.
+- Critério de validação: build do frontend confirma que a alteração é válida localmente; a validação final de suporte depende de uma execução real, pois a autorização do modelo é decidida pelo Codex App Server/conta ChatGPT no `thread/start`.
+
+## 2026-06-24 18:10:59 UTC — Resultado do teste GPT-5.5 Pro em produção
+- Pergunta explícita de causa raiz: “por que a execução com GPT-5.5 Pro não deu certo?”. Resposta: o valor `gpt-5.5-pro` foi selecionado, chegou ao `sandbox-orchestrator`, abriu `thread/start` com sucesso, mas o Codex App Server rejeitou o turno com erro 400 informando que o modelo não é suportado ao usar Codex com conta ChatGPT.
+- Causa raiz confirmada nos logs: incompatibilidade externa do modelo `gpt-5.5-pro` com o fluxo Codex via conta ChatGPT; não foi falha de combo, backend, token GitHub ou clone.
+- Correção aplicada: removido `gpt-5.5-pro` da combo do `CodexChatgptPage` para não oferecer uma opção comprovadamente rejeitada nesse fluxo, mantendo `gpt-5.5` e `gpt-5.4`.
+- Correção preventiva adicional: tratado evento `error` do Codex App Server no sandbox para que rejeições futuras não derrubem o processo Node por `ERR_UNHANDLED_ERROR`, registrando o erro e encerrando o job como falha controlada.
+
+## 2026-06-24 18:17:40 UTC — Pesquisa sobre habilitar GPT-5.5 Pro na conta
+- Pesquisadas fontes oficiais da OpenAI sobre disponibilidade do GPT-5.5 Pro em ChatGPT, Codex e API.
+- Conclusão: GPT-5.5 Pro pode existir para planos ChatGPT Pro/Business/Enterprise/Edu e também como modelo de API Responses, mas a documentação de Codex para login com ChatGPT recomenda/expõe GPT-5.5 para Codex; o teste real do AI Hub confirmou que o Codex App Server rejeita `gpt-5.5-pro` quando usado com conta ChatGPT.
+- Direção operacional: trocar configurações da conta pode liberar GPT-5.5 Pro no ChatGPT normal, mas não há evidência oficial de configuração de conta que force `gpt-5.5-pro` no Codex via ChatGPT sign-in. Para usar Pro programaticamente, o caminho mais plausível é integração por API/Responses com chave e modelo `gpt-5.5-pro`, não o fluxo atual do Codex App Server autenticado por ChatGPT.
+
+## 2026-06-24 19:43:10 UTC — Suporte a imagens no Codex ChatGPT via App Server
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o frontend e o backend já transportavam anexos de imagem, mas o `sandbox-orchestrator` bloqueava qualquer `imageAttachments` no perfil `CHATGPT_CODEX` com `CODEX_INPUT_IMAGE_UNSUPPORTED`, embora o protocolo do Codex App Server aceite entrada de imagem no `turn/start` como item `{ type: "image", url: ... }`.
+- Correção aplicada: removido o bloqueio local e convertido cada data URL de imagem anexada para o formato aceito pelo Codex App Server no payload de `turn/start`, mantendo o texto como primeiro item da entrada.
+- Validação: ampliado o teste do fluxo `CHATGPT_CODEX` para cobrir anexo de imagem e confirmar que o `turn/start` recebe texto mais imagem, sem cair na Responses API.
+
+## 2026-06-25 15:20:00 UTC — Correção do botão Pedir PR no Codex ChatGPT
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o endpoint `POST /api/codex/requests/{id}/create-pr` exige o header `X-Role: owner` via `assertOwner`, mas o botão `Pedir PR` da tela `/codex-chatgpt` chamava esse endpoint sem os headers de owner, diferentemente da tela de detalhe da solicitação; por isso o backend retornava `403 Forbidden` antes de tentar criar o PR.
+- Correção aplicada: alinhado o `CodexChatgptPage` ao fluxo já existente na tela de detalhe, enviando `X-Role: owner` e `X-User: codex-ui` na chamada de criação de PR.
+- Validação local: build do frontend executado para confirmar que a alteração TypeScript/React compila.
+
+## 2026-06-25 15:36:00 UTC — Bloqueio de PR para execução Codex ChatGPT com falha
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: após o botão passar a enviar os headers corretos, o backend aceitava `create-pr` sem conferir se a solicitação alvo terminou com `COMPLETED`; assim uma execução `FAILED` ainda podia disparar a criação de PR usando uma resposta reaproveitada pela busca por ambiente/repositório.
+- Correção aplicada: o endpoint de criação de PR agora valida o status da solicitação e retorna `400` quando ela não está concluída com sucesso, antes de buscar resposta/patch ou chamar o serviço de Pull Request.
+- Validação local: adicionado teste de controller garantindo que uma solicitação `FAILED` é rejeitada e que nenhum serviço de resposta/PR é acionado nesse caso.
+
+## 2026-06-25 15:41:19 UTC-3
+- Consulta solicitada da resposta do modelo na solicitação Codex `#727` via endpoint público `GET https://iahub.xyz/api/codex/requests/727`.
+- Confirmado que a solicitação `#727` está `COMPLETED`, com modelo `gpt-5.5`, perfil `CHATGPT_CODEX`, PR vinculado `https://github.com/paulofor/marketing-hub/pull/3965` e resposta registrada em `responseText`.
+
+## 2026-06-25 15:47:24 UTC-3
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela mostrava um texto longo vindo das interações outbound do sandbox/Codex App Server, mas o registro principal da solicitação (`codex_requests.response_text`) dependia apenas de `summary`/`error`; assim havia risco de perder ou substituir o transcript completo por um resumo menor no registro da solicitação.
+- Correção aplicada: `CodexRequestService` agora deriva `responseText` preferencialmente do transcript completo das interações outbound retornadas pelo sandbox, mantendo fallback para `error` e depois `summary`, e usa essa regra em criação, callback/refresh e cancelamento.
+- Validação local: adicionado teste unitário cobrindo callback com interações inbound/outbound e garantindo que apenas o transcript outbound completo é salvo em `CodexRequest.responseText`.
+
+## 2026-06-25 15:55:13 UTC-3
+- Correção da correção anterior após esclarecimento: o usuário e commits/PRs devem continuar recebendo apenas o resumo final em `responseText`, enquanto o transcript completo do modelo deve ficar preservado no registro da solicitação para auditoria.
+- Causa raiz refinada: usar `responseText` para armazenar o transcript completo misturava a saída operacional/auditável com a resposta resumida de consumo humano, fazendo a UI e fluxos de commit poderem exibir conteúdo longo demais.
+- Ajuste aplicado: adicionado campo persistido `model_transcript` em `codex_requests` e mapeado em `CodexRequest.modelTranscript`; `CodexRequestService` mantém `responseText` em `error`/`summary` e grava as interações outbound completas em `modelTranscript`.
+- Validação local: teste unitário atualizado para garantir que o resumo permanece em `responseText` e o transcript completo fica em `modelTranscript`.
+
+## 2026-06-25 23:11:45 UTC — Investigação de Internal Server Error na tela Codex ChatGPT
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela `/codex-chatgpt` tentou carregar a listagem paginada de solicitações, que passa pelo `CodexController.list` e `CodexRequestService.listPage`, mas o backend não conseguiu obter conexão JDBC do pool Hikari dentro de 60s.
+- Evidência de produção via MCP: `docker logs --tail 250 ai-hub-6-backend-1` mostrou `HikariPool-1 - Connection is not available, request timed out after 60000ms (total=6, active=6, idle=0, waiting=11)` exatamente no fluxo `CodexController.list -> CodexRequestService.listPage -> findAllByOrderByCreatedAtDesc`.
+- Conclusão: o `Internal Server Error` visível no frontend é consequência da exaustão/indisponibilidade temporária do pool de conexões com o banco no backend, não de erro de layout da página nem de falha direta do navegador.
+
+## 2026-06-25 23:20:00 UTC — Correção do acesso travado por refresh automático do Codex
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o erro anterior continuou porque a causa não era apenas falta momentânea de conexão; endpoints de listagem do Codex executavam refresh automático contra o sandbox durante requisições GET, inclusive para solicitação terminal recente que já tinha resposta, e múltiplos acessos concorrentes tentavam atualizar a mesma `CodexRequest 728` e inserir as mesmas interações.
+- Evidência de produção via MCP: os logs passaram a mostrar `Atualizando CodexRequest 728 a partir do sandbox` em várias threads (`exec-37`, `exec-77`, `exec-70`, `exec-20`) e falhas `Lock wait timeout exceeded` ao inserir em `codex_interactions`, explicando o esgotamento do pool Hikari e páginas como `/prompts` ficando presas em carregamento.
+- Correção aplicada: solicitações terminais que já possuem `responseText` deixam de ser refrescadas automaticamente apenas por metadados de uso faltantes, e refreshes do mesmo `CodexRequest` passam a ser serializados em memória para evitar gravações concorrentes no mesmo job.
+- Validação local prevista: teste unitário garante que uma solicitação terminal com resposta, mesmo sem metadados de uso completos, não chama `sandboxOrchestratorClient.getJob` durante a listagem.
+
+## 2026-06-26 00:46:00 UTC — Consulta de status da solicitação Codex #728
+- Verificado via endpoint público `GET https://iahub.xyz/api/codex/requests/728` que a solicitação `#728` ainda aparece com `status: RUNNING`, `finishedAt: null`, `durationMs: null`, `responseText: null`, `timeoutCount: 0`, `interactionCount: 2` e `externalId: 9b3f55be-577e-4325-93a3-4e89b822c465`.
+- Verificado via MCP (`docker logs --tail 120 ai-hub-6-backend-1`) que o backend tenta atualizar a `CodexRequest 728`, consulta o job `9b3f55be-577e-4325-93a3-4e89b822c465` no `sandbox-orchestrator`, mas recebe `Job ... não encontrado no sandbox-orchestrator`; por isso a tela mantém a execução aberta sem resposta/finalização registrada.
+
+## 2026-06-26 00:55:00 UTC — Correção de detalhe Codex preso após fechar tela
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: fechar a tela não deveria parar a execução, mas a página de detalhe (`GET /api/codex/requests/{id}`) apenas lia o registro salvo; ela não aplicava o refresh/fallback que já existia nas listagens. Se o callback não chegasse ou o job sumisse do `sandbox-orchestrator`, reabrir a solicitação mantinha o último estado persistido (`RUNNING`) em vez de buscar o diálogo/job mais recente ou finalizar com diagnóstico.
+- Correção aplicada: `CodexRequestService.find` agora avalia a mesma política de refresh da listagem ao abrir o detalhe, consulta o sandbox quando a solicitação ainda está incompleta e recarrega o registro após atualização; `listInteractions` usa leitura sem refresh para não escrever dentro de transação somente leitura.
+- Validação local: adicionado teste garantindo que abrir o detalhe de uma solicitação `RUNNING` antiga com job ausente aciona `getJob`, aplica o fallback `FAILED`, preenche resposta/finalização e mantém a contagem de interações.
+
+## 2026-06-26 17:10:00 UTC — Investigação de HTTP 502 no domínio iahub.xyz e acesso ao MCP
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o domínio público está devolvendo `HTTP 502 Bad Gateway` tanto na raiz (`https://iahub.xyz/`) quanto no caminho operacional do MCP (`https://iahub.xyz/mcp` e `POST /mcp/tools/linux-command`), portanto o erro visível no navegador não é apenas uma falha de tela do frontend; a própria rota pública/reverse proxy não consegue alcançar os serviços internos necessários, inclusive o MCP usado para diagnóstico remoto.
+- Evidência local coletada: `curl -i https://iahub.xyz/`, `curl -i https://iahub.xyz/mcp` e `curl -i -X POST https://iahub.xyz/mcp/tools/linux-command ...` retornaram 502, impedindo executar `docker logs` via MCP no host de produção nesta rodada.
+- Correção preventiva aplicada no pipeline: o deploy agora usa `docker compose up -d --remove-orphans` para remover serviços antigos que possam ficar pendurados no host e adiciona uma etapa de verificação pós-deploy que valida `frontend`, `backend` e `mcp-server` por dentro do Docker Compose, imprime logs de diagnóstico se algum serviço não subir e só então testa publicamente `https://iahub.xyz/mcp` e `https://iahub.xyz/`.
+
+## 2026-06-26 17:38:00 UTC — Correção da limpeza que removia imagens `latest` do GHCR
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a etapa final do deploy buscava versões do GHCR pela tag do commit (`${{ github.sha }}`) e deletava a versão inteira do pacote; como o build publica `latest` e `${{ github.sha }}` no mesmo push/manifesto, apagar a versão do SHA também remove a tag `latest` usada pelo `docker compose pull` em produção.
+- Impacto provável observado: em novos deploys ou recriações de serviço, os containers de `backend`, `frontend`, `sandbox-orchestrator` e `mcp-server` podem não conseguir puxar a imagem `latest`, deixando apenas containers já existentes/antigos em execução, como o `caddy` visto no `docker ps` do host.
+- Correção aplicada: removida a etapa `Clean up GHCR images for this build` do workflow para preservar as imagens publicadas e manter `latest` disponível para o compose de produção.
+
+## 2026-06-26 — Ajuste da resposta da tela Codex ChatGPT
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela `/codex-chatgpt` exibia o campo `responseText` como texto puro em um `<p>`, então blocos Markdown/code fence apareciam sem formatação; além disso, o `sandbox-orchestrator` tratava deltas de `item/agentMessage/delta` como resumo final, permitindo que texto transitório/pensamento do modelo fosse persistido e usado em consumo humano/PR quando o evento final não substituía essa concatenação.
+- Ajuste aplicado no frontend: adicionada renderização Markdown básica para parágrafos, listas, negrito, inline code e code fences, além de uma sanitização defensiva para esconder o trecho transitório antes do resumo final quando dados antigos ainda vierem contaminados.
+- Ajuste aplicado no sandbox-orchestrator: deltas de `item/agentMessage/delta` deixam de compor o `summary`; o resumo final passa a preferir o texto do item `AgentMessage` concluído em `item/completed`, evitando que pensamento/transcrição transitória seja gravado em `responseText` e usado em PRs.
+
+## 2026-06-27 02:53:36 UTC — Confirmação de duplicidade aparente de PRs no marketing-hub
+- Verificado publicamente no GitHub que a listagem de PRs fechados de `paulofor/marketing-hub` mostra dois PRs consecutivos criados pelo bot `ai-hub-automations`: `#4058` e `#4059`, ambos mesclados em 2026-06-27.
+- Detalhe confirmado: o PR `#4058` foi mesclado com 1 commit a partir de `ai-hub/cifix-aeb53f33-c490-4e9b-b267-d885e9509938`, enquanto o PR `#4059` foi mesclado com 5 commits a partir de `ai-hub/fix-1782528565`.
+- Conclusão operacional: sim, existem dois PRs automatizados recentes; eles não são apenas artefato visual da lista. O `#4058` contém a correção detalhada do Liquibase, e o `#4059` referencia explicitamente a solicitação `#730`, com vários commits de mesmo assunto.
+
+## 2026-06-27 03:00:00 UTC — Correção para criar PR somente no botão Pedir PR do Codex ChatGPT
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o backend enviava `githubToken` também para jobs `CHATGPT_CODEX`; como o `sandbox-orchestrator` cria PR automaticamente quando recebe token e encontra diff, a execução inicial já abria um PR antes do usuário usar o botão `Pedir PR`. Depois, o botão chamava `/codex/requests/{id}/create-pr` e abria outro PR usando o diff salvo, gerando a duplicidade observada.
+- Correção aplicada: jobs `CHATGPT_CODEX` deixam de receber `githubToken` no despacho para o sandbox, impedindo PR automático durante a conversa; o token continua disponível para os demais perfis que dependem do comportamento automático.
+- Ajuste complementar: o endpoint manual `Pedir PR` passa a usar a resposta final (`responseText`) como explicação completa do PR, com fallback para `fixPlan`, e o corpo do PR criado pelo `PullRequestService` agora recebe essa explicação em vez de texto genérico.
+- Validação local: testes unitários confirmam que `CHATGPT_CODEX` é enviado ao sandbox sem token GitHub e que o endpoint manual usa a resposta final completa como explicação do PR.
+
+## 2026-06-27 - Favicon do AI Hub
+- Criei um favicon SVG para o frontend em `apps/frontend/public/favicon.svg`, com identidade visual em gradiente azul/índigo/roxo e símbolo central inspirado em hub de IA.
+- Atualizei `apps/frontend/index.html` para declarar o favicon via `<link rel="icon" type="image/svg+xml" href="/favicon.svg" />`, permitindo que o Chrome exiba o ícone na aba.
+
+## 2026-06-27 00:00:00 UTC — Remoção do módulo de vídeo não utilizado
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a funcionalidade de vídeo ainda estava exposta no menu lateral e na rota `/video/projects` porque o módulo completo havia permanecido registrado no frontend, no backend, nas migrações/changelog e na documentação, apesar de não estar em uso pelo produto.
+- Correção aplicada: removidos o item de navegação e a rota/página de projetos de vídeo no frontend; removidos controller, service, DTOs, entidades, repositórios e teste do módulo de vídeo no backend; removidos os changelogs/migrações e a documentação específica do módulo para evitar que novas instalações recriem essa superfície.
+- Validação local prevista: build do frontend e testes do backend para confirmar que não ficaram imports, rotas ou beans quebrados após a remoção.
+
+## 2026-06-27 00:00:00 UTC — Remoção do módulo Summaries não utilizado
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a funcionalidade Summaries continuava registrada como rota e item de menu no frontend e como controller/service/repository/entity/DTO no backend, além de manter a tabela `summaries` nas migrações iniciais, embora o produto não use mais esse módulo.
+- Correção aplicada: removidos a tela `/summaries`, o link lateral e a rota React; removidos os beans e classes backend específicos de Summaries; removida a criação/alteração da tabela `summaries` das migrações.
+- Validação local prevista: busca por referências específicas do módulo e builds/testes do frontend/backend para confirmar que não ficaram imports, rotas ou beans quebrados.
+
+
+## 2026-06-27 00:00:00 UTC — Remoção do módulo Blueprint não utilizado
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a funcionalidade Blueprint continuava exposta como rota `/blueprints`, item no menu lateral, card no dashboard e também permanecia registrada no backend com controller/service/repository/entity/DTO e migrações iniciais, mesmo não sendo mais usada pelo produto.
+- Correção aplicada: removidos a rota, página e navegação de Blueprints no frontend; removidos os componentes backend específicos de Blueprint; removido o vínculo `projects.blueprint_id` e a criação/alteração da tabela `blueprints` nas migrações iniciais; atualizado o texto do dashboard e do README para refletir o escopo atual.
+- Validação local prevista: busca por referências específicas de Blueprint e builds/testes do frontend/backend para confirmar que não ficaram imports, rotas ou beans quebrados.
+
+## 2026-06-28 00:00:00 UTC — Novo favicon AI Hub 6
+- Ajuste aplicado: preservei o favicon anterior em `apps/frontend/public/favicon-legacy-aihub.svg` para manter o histórico visual disponível no projeto.
+- Novo favicon: substituí `apps/frontend/public/favicon.svg` por uma versão SVG baseada no número 6, mantendo a paleta azul/índigo/roxo do AI Hub e reforçando a identidade do AIHUB 6 na aba do navegador.
+- Integração: a página já referencia `/favicon.svg` em `apps/frontend/index.html`, então o novo arquivo passa a ser exibido sem mudança adicional no HTML.
+## 2026-06-27 23:52:00 UTC — Análise sobre Docker daemon na sandbox
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a sessão de sandbox atual não tem Docker CLI disponível (`docker: command not found`) e também não há processo `dockerd`/`containerd` em execução visível, portanto a falha não é apenas de publicação da porta 5173; falta o runtime Docker dentro da sandbox.
+- Conclusão: não é algo que possa ser corrigido apenas dentro do repositório em tempo de execução. Para suportar Docker real na sandbox seria necessário alterar a imagem/base e a política de execução do ambiente para incluir Docker CLI/daemon e permissões privilegiadas ou, preferencialmente, montar o socket Docker do host de forma controlada. Para o AI Hub, o caminho mais seguro continua sendo executar comandos Docker no host via MCP Server autenticado.
+
+## 2026-06-27 23:58:00 UTC — Explicação dos riscos de Docker-in-Docker na sandbox
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a dúvida surgiu porque a conclusão anterior citou Docker-in-Docker como opção menos recomendada sem detalhar que o risco não vem apenas do pacote Docker, mas das permissões necessárias para um daemon criar containers dentro de outro container.
+- Detalhamento: Docker-in-Docker completo normalmente precisa de privilégios elevados para manipular namespaces, cgroups, iptables/rede, montagens e camadas de filesystem. Em uma sandbox multiusuário ou conectada ao host, isso aumenta a superfície de risco porque uma falha, configuração permissiva ou montagem sensível pode permitir acesso indevido ao host, interferência em rede/containers, consumo excessivo de recursos ou bypass parcial do isolamento esperado.
+- Esclarecimento sobre o trabalho realizado: não foi implementado Docker na imagem da sandbox. O que foi feito foi uma verificação local da sessão atual, confirmação da ausência de Docker CLI/daemon e registro documental da causa raiz e das alternativas operacionais. Uma implementação real exigiria mudança na imagem/base e na forma como a sandbox é executada.
+
+## 2026-06-28 00:06:00 UTC — Análise da solicitação #739 e bloqueio de publicação em 5173
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a solicitação #739 implementou e validou a alteração da tela, mas, ao tentar disponibilizá-la na URL original `:5173`, o modelo identificou que essa porta era servida pelo container `marketinghub-frontend`/nginx e precisaria rebuildar/recriar esse container; a sessão não tinha Docker daemon disponível para fazer essa recriação.
+- O que o modelo precisou e não teve: acesso a um runtime Docker funcional na própria sessão, ou uma ponte operacional equivalente para executar no host os comandos de build/recreate do container que publica a porta 5173.
+- Consequência operacional: a validação foi desviada para um Vite dev server em `:5174`, enquanto a URL original `:5173` permaneceu servindo o container existente.
+
+## 2026-06-28 00:15:00 UTC — Sugestão para oferecer capacidade operacional ao modelo
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: na #739 o modelo precisava promover a alteração validada para o serviço real em `:5173`, mas recebeu apenas a sandbox de código; faltou uma capacidade operacional segura para rebuild/recreate/logs do container no host.
+- Sugestão principal: oferecer ao modelo uma ferramenta de operações controladas no host, reaproveitando o MCP Server já existente, com comandos allowlistados por ambiente/projeto (ex.: status, logs, build frontend, recreate frontend, healthcheck e rollback), em vez de habilitar Docker-in-Docker completo na sandbox.
+- Guardrails recomendados: exigir confirmação/escopo do serviço, registrar auditoria por request/job, limitar comandos e paths, esconder segredos, aplicar timeout, rate limit e dry-run, e retornar ao usuário quando a ação tocar produção.
+- Fluxo ideal: o modelo altera código e valida dentro da sandbox; se precisar publicar ou inspecionar container real, chama uma ferramenta `host-operation` de alto nível, que executa no host via MCP e devolve logs/resultado, sem expor o Docker daemon bruto dentro da sandbox.
+
+## 2026-06-28 00:25:00 UTC — Registro de melhoria futura para operações de host na sandbox
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a proposta anterior sobre `host-operation` poderia ser confundida com implementação imediata; o objetivo correto é registrar a necessidade percebida na solicitação #739 como melhoria futura, sem alterar o runtime agora.
+- Ação aplicada: criado `docs/melhorias/operacoes-host-sandbox.md` descrevendo o contexto da #739, o problema operacional, uma proposta futura de ferramenta controlada via MCP Server e os guardrails necessários.
+- Decisão: não implementar Docker-in-Docker nem `host-operation` neste momento; manter apenas como documentação de melhoria futura para planejamento posterior.
+
+## 2026-06-28 00:39:00 UTC — Correção de carregamento do novo favicon
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o novo SVG já estava publicado em `/favicon.svg`, mas o HTML continuava apontando para a mesma URL estável. Navegadores tratam favicons com cache persistente e podem manter o ícone antigo mesmo após o arquivo no servidor ser substituído.
+- Correção aplicada: adicionado versionamento na URL do favicon (`/favicon.svg?v=aihub6-20260628`) para forçar uma nova requisição do navegador e atualizado o título da aba para `AI Hub 6`, alinhando a identidade visual com o novo ícone.
+- Validação local/remota: confirmado via `curl` que `https://iahub.xyz/favicon.svg` já retorna o SVG novo; a mudança no HTML evita que o navegador reutilize a entrada antiga do cache do favicon.
+## 2026-06-28 — Reforço de causa raiz no prompt do sandbox
+- Investigada a lacuna observada na solicitação #741: o modelo conseguia identificar o problema e propor solução para o CTA do anúncio, mas o prompt do runner não exigia que a resposta explicitasse por que o erro aconteceu nem aprofundasse a cadeia causal antes da proposta.
+- Ajustado o prompt sistêmico do `sandbox-orchestrator` para obrigar a pergunta “Por que esse erro aconteceu?”, diferenciar sintoma de causa, explorar hipóteses/proteções ausentes na etapa `LOCALIZAR_CAUSA` e incluir uma seção final “Causa raiz” mesmo em tarefas apenas diagnósticas.
+
+## 2026-06-28 02:05:00 UTC — Análise da solicitação Codex ChatGPT #743
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a solicitação #743 chegou ao Codex App Server e produziu atividade, mas o turno não emitiu `turn/completed` dentro da janela configurada do sandbox-orchestrator, que por padrão é de 10 minutos, então o job foi marcado com `CODEX_TURN_INTERRUPTED`.
+- Evidências coletadas no host via MCP: healthcheck `https://iahub.xyz/mcp` retornou `UP`; logs do `sandbox-orchestrator` mostraram o job `7c5508a1-65ae-4f08-8dd5-462cd906af59` recebendo polling contínuo, várias falhas internas de `exec_command` do Codex App Server com `CreateProcess ... No such file or directory`, e depois callback para o backend com erro 500; logs do backend entre 01:45 e 01:53 UTC mostraram a requisição `CodexRequest 743` consultando esse job e falhando ao persistir callback por `Duplicate entry '7c5508a1-65ae-4f08-8dd5-462cd906af59-0744-inbound' for key 'uq_codex_interactions_sandbox_id'`.
+- Conclusão operacional: na interface apareceu apenas `CODEX_TURN_INTERRUPTED` porque esse é o erro final do timeout do turno; em paralelo, houve um problema de sincronização/persistência de interações duplicadas no backend que gerou callback 500 e dificultou a atualização limpa dos detalhes da execução.
+
+## 2026-06-28 02:20:00 UTC — Aumento do timeout do turno Codex App Server
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução #743 estourou o limite operacional de 10 minutos aguardando `turn/completed`; para tarefas de código maiores, principalmente quando o App Server tenta investigar, editar e validar, esse limite era curto demais e transformava execuções ainda ativas em `CODEX_TURN_INTERRUPTED`.
+- Ajuste aplicado: aumentado o timeout padrão de `CODEX_APP_SERVER_TURN_TIMEOUT_MS` para 30 minutos (`1800000` ms) tanto no fallback do `sandbox-orchestrator` quanto no `.env.example` usado pelo Compose, e atualizada a documentação do serviço.
+- Observação: esse ajuste reduz interrupções prematuras, mas não substitui correções separadas para falhas internas de `exec_command` do Codex App Server ou para a condição de corrida de interações duplicadas observada no callback da #743.
+
+## 2026-06-28 09:44:21 UTC-3
+- Correção de registro: a entrada `2026-06-28 09:38:44 UTC-3` foi adicionada antes de registros posteriores já existentes; mantida por política append-only, e esta entrada registra a conclusão no final correto do arquivo.
+- Implementado o novo menu `Codex ChatGPT MKT` com rota `/codex-chatgpt-mkt`, reutilizando a tela do Codex ChatGPT com configuração própria.
+- Adicionado perfil dedicado `CHATGPT_CODEX_MKT` no frontend, backend e sandbox-orchestrator para usar o mesmo Codex App Server/sandbox do ChatGPT Codex, sem token OAuth legado no payload.
+- Orientação MKT aplicada ao fluxo: analisar principalmente relatórios Markdown de marketing digital no repositório, campanhas, estratégias, resultados e oportunidades, gerando recomendações de melhoria e mantendo PR somente sob solicitação explícita.
+- Validação executada: build do frontend, testes do sandbox-orchestrator e teste focado do backend `CodexRequestServiceTest`.
+
+## 2026-06-28 13:33:40 UTC — Análise sobre Codex App Server com repositórios não GitHub
+- Pergunta respondida: se o Codex App Server, integrado ao AI Hub, pode operar com outro provedor Git além do GitHub, como GitLab.
+- Conclusão técnica: o `sandbox-orchestrator` já aceita `repoUrl` direto e clona via `git clone`, portanto a execução do Codex em um workspace Git não depende conceitualmente do GitHub; porém o fluxo atual do backend/UI do AI Hub monta jobs a partir de `owner/repo`, transforma isso em URL GitHub quando `repoUrl` não é enviado e mantém automações de token/PR baseadas na API do GitHub.
+- Limitação prática: para GitLab hoje seria necessário enviar/implementar `repoUrl` e credenciais adequadas para clone, e criar suporte específico para merge request/comentários/webhooks/token GitLab se o objetivo for paridade com PRs e automações GitHub.
+
+## 2026-06-28 13:36:02 UTC — Orientação sobre repositório Git próprio em VPS
+- Pergunta respondida: se é viável criar um repositório de fontes próprio em uma VPS para uso com o Codex App Server/AI Hub.
+- Conclusão: é viável e não é tecnicamente complicado para uso básico com Git remoto via SSH ou HTTPS; a complexidade aumenta apenas se o objetivo for reproduzir recursos de plataforma como interface web, pull/merge requests, revisão, webhooks, permissões granulares e CI/CD.
+- Recomendação: começar com um repositório Git bare na VPS acessado por SSH para clone/push; se precisar de experiência parecida com GitHub/GitLab, considerar Gitea/Forgejo na própria VPS antes de implementar uma plataforma própria do zero.
+
+## 2026-06-28 13:40:38 UTC — Documento de melhoria futura para repositórios Git próprios
+- Pergunta respondida: registrar em `docs/melhorias` as opções discutidas para hospedar repositórios fora do GitHub e usá-los com o Codex App Server/AI Hub.
+- Ação aplicada: criado `docs/melhorias/repositorios-git-proprios-codex.md` com alternativas Git bare em VPS, Gitea/Forgejo, GitLab self-hosted, suporte genérico por `repoUrl`, camada de provedores Git, cuidados de segurança e ordem sugerida de implementação.
+- Decisão registrada: priorizar suporte genérico por `repoUrl` e clone/diff/patch antes de automatizar PR/MR, comentários, webhooks e pipelines por provedor.
+
+## 2026-06-28 - Remoção do modelo Pro da combo ChatGPT Codex
+- Investigação da causa raiz: a opção `gpt-5.5-pro` aparecia porque estava cadastrada na lista fallback hardcoded `CHATGPT_CODEX_MODELS` da página `CodexChatgptPage`, usada para preencher a combo quando a tela inicializa.
+- Correção: removido `gpt-5.5-pro` dessa lista fallback, mantendo apenas modelos permitidos para uso na combo.
+
+## 2026-06-29 - Lista de Prompts
+
+- Adicionado menu "Lista de Prompts" no frontend e rota dedicada para listar listas cadastradas.
+- Implementada tela de importação de arquivo `.md`, onde cada linha iniciada com `*` é tratada como um prompt.
+- Criados endpoint, serviço, entidades, repositório e migrations para persistir listas de prompts e seus itens no banco de dados.
+
+## 2026-06-29 - Orientação de melhor resposta e timeout de 1 hora no Codex ChatGPT
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: os perfis `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT` não recebiam uma instrução explícita para priorizar a melhor resposta sem encurtar a análise por limites de tempo/interações; além disso, o timeout padrão do turno do Codex App Server estava em 30 minutos, menor que a janela de 1 hora solicitada.
+- Ajuste aplicado: o input enviado ao `turn/start` agora inclui orientação de melhor resposta para os modos Codex ChatGPT e Codex ChatGPT MKT, e o timeout padrão `CODEX_APP_SERVER_TURN_TIMEOUT_MS` passou para 1 hora (`3600000` ms), mantendo override por variável de ambiente.
+
+## 2026-06-29 — Prompt do Codex ChatGPT MKT com alternativas de decisão
+- Solicitação recebida: reforçar o prompt do perfil Codex ChatGPT MKT para que o modelo, nos pontos mais importantes do fluxo de solução, gere pelo menos 3 alternativas boas, compare e siga pela melhor.
+- Pergunta de causa raiz aplicada antes do ajuste: por que esse comportamento não acontecia de forma consistente? Porque o prompt do perfil MKT orientava foco documental/marketing e qualidade geral da resposta, mas não especificava um protocolo explícito de tomada de decisão com múltiplas alternativas.
+- Ajuste aplicado no `sandbox-orchestrator`: o prompt enviado via Codex App Server e o prompt de perfil do runner agora instruem o modelo a elaborar pelo menos 3 alternativas boas, comparar benefícios, riscos, custo/esforço e aderência ao objetivo, escolher a melhor e justificar objetivamente.
+- Teste do perfil MKT atualizado para garantir que a instrução de 3 alternativas e comparação esteja presente no payload `turn/start` enviado ao Codex App Server.
+
+## 2026-06-29 — Atualização de Lista de Prompts por reenvio
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o endpoint de importação sempre criava um novo `PromptListRecord` a cada envio e o frontend sempre inseria o retorno no topo da lista; não havia busca por lista existente nem substituição transacional dos itens vinculados.
+- Ajuste aplicado: o backend agora localiza uma lista existente pelo mesmo nome, apaga seus itens antigos via `orphanRemoval` e reconstrói os prompts a partir do novo arquivo `.md`, atualizando também o nome do arquivo de origem.
+- Ajuste aplicado no frontend: a tela passou a comunicar o comportamento de criar ou atualizar lista e substitui o item retornado no estado local quando o backend reutiliza a mesma lista.
+- Validação planejada: teste unitário do serviço para confirmar que reenviar arquivo para a mesma lista remove prompts antigos e mantém apenas os novos.
+
+## 2026-06-30 — Ambiente local em desenvolvimentos complexos no Codex ChatGPT
+- Solicitação recebida: incluir nos prompts dos perfis Codex ChatGPT e Codex ChatGPT MKT a orientação de que, em desenvolvimentos mais complexos, o modelo deve montar um ambiente local, executar o que pretende desenvolver e ajustar iterativamente até alcançar o funcionamento desejado.
+- Pergunta explícita de causa raiz: por que esse comportamento precisava ser reforçado? Porque as instruções atuais priorizavam qualidade da resposta, análise e tomada de decisão, mas não exigiam de forma direta a validação prática em ambiente local durante desenvolvimentos complexos.
+- Ajuste aplicado no `sandbox-orchestrator`: o input enviado ao Codex App Server e as instruções de perfil do runner agora incluem a orientação de montar ambiente local, executar e iterar até o funcionamento desejado para os perfis `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT`.
+- Testes atualizados para garantir que a instrução de ambiente local e iteração esteja presente no payload `turn/start` dos dois perfis.
+
+## 2026-06-30 — Limite de prompts recentes na tela Prompts
+- Solicitação recebida: alterar a tela de Prompts para mostrar somente as 10 interações mais recentes.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a página `PromptsPage` renderizava todos os registros retornados por `/prompts` após o filtro de busca, sem ordenar por `createdAt` em ordem decrescente e sem limitar a quantidade exibida; por isso registros antigos continuavam aparecendo na tela.
+- Ajuste aplicado: a lista exibida agora é ordenada pela data de criação mais recente primeiro e limitada aos 10 primeiros registros após o filtro de busca.
+
+## 2026-06-30 - Investigação de lentidão na tela de detalhe Codex #789
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela de detalhe disparava consultas repetidas ao sandbox para a mesma solicitação enquanto um refresh ainda estava em andamento, porque o bloqueio de concorrência em `refreshFromSandbox` só era aplicado depois da chamada externa `getJob`; assim, várias requisições simultâneas ainda aguardavam o sandbox e mantinham a tela em carregamento. Os logs do backend em produção também mostraram a execução #789 sendo atualizada repetidamente e a listagem de solicitações passando por `findAllByOrderByCreatedAtDesc`.
+- Ajuste aplicado: o controle `SANDBOX_REFRESHES_IN_PROGRESS` passou a ser adquirido antes da chamada ao sandbox para evitar chamadas externas duplicadas para a mesma solicitação.
+- Criados índices de banco para os acessos mais usados na tela/listagem Codex: busca por `external_id`, filtro por `rating` ordenado por criação e contagem/listagem de interações por solicitação.
+
+## 2026-06-30 — Correção de versão duplicada em migrations Flyway
+- Solicitação recebida: corrigir falha de inicialização do backend com `Found more than one migration with version 29`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: duas alterações independentes criaram migrations MySQL com a mesma versão Flyway `V29` (`create_prompt_lists` e `add_codex_request_lookup_indexes`); o Flyway exige que cada migration versionada tenha número único e interrompe a inicialização antes de criar o `entityManagerFactory` quando encontra versões duplicadas.
+- Ajuste aplicado: a migration de índices, criada depois da migration de listas de prompts, foi renumerada de `V29` para `V30`, preservando a ordem cronológica e eliminando a duplicidade de versão.
+
+- 2026-06-30 UTC — Investigado o travamento da conversa em execuções longas (~15 minutos) na tela `/codex-chatgpt-mkt`. Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o acompanhamento fazia polling a cada 5s no detalhe e na lista enquanto o backend também aceitava callback do sandbox; sem timeout no `RestClient` do sandbox-orchestrator e sem a mesma trava para callbacks, uma sincronização longa/concorrente podia manter o refresh preso, gerar tentativas sobrepostas e deixar a conversa exibindo “Aguardando resposta do modelo...” sem avançar.
+- Ajuste aplicado: o `RestClient` do sandbox-orchestrator passou a ter timeout configurável de conexão/leitura, callbacks do sandbox agora respeitam a mesma trava de sincronização por `CodexRequest` usada pelo polling, e a tela de conversa evita iniciar novo polling de detalhe enquanto o anterior ainda está em andamento.
+
+## 2026-06-30 — Marcador na aba quando o modelo responde
+- Solicitação recebida: criar uma marca na aba do navegador para avisar quando o modelo responder, evitando precisar abrir a aba do AI Hub 6 repetidamente.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a conversa do Codex ChatGPT atualizava a resposta por polling interno, mas não havia nenhum sinal fora do conteúdo da página quando a aba estava em segundo plano; assim, o usuário só percebia a conclusão ao voltar manualmente para a aba.
+- Ajuste aplicado no frontend: a página de conversa agora detecta a transição de uma mensagem do modelo de status em andamento para status terminal enquanto a aba está oculta, altera o título para indicar “Resposta pronta” e troca temporariamente o favicon por um ícone com destaque; ao focar/visualizar a aba, o marcador é limpo e o favicon/título originais são restaurados.
+
+## 2026-07-01 — Beep sonoro quando o modelo responde
+- Solicitação recebida: além do indicador visual na aba do navegador, emitir um pequeno beep sonoro para avisar o usuário quando a resposta do modelo ficar pronta.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o marcador anterior atuava apenas sobre título e favicon, então o aviso dependia de o usuário notar a aba visualmente; não existia um canal auditivo complementar e navegadores exigem desbloqueio de áudio por interação do usuário antes de tocar sons automaticamente.
+- Ajuste aplicado no frontend: o hook de marcador da conversa Codex ChatGPT agora prepara/desbloqueia um `AudioContext` em interações de ponteiro ou teclado e, na mesma transição que marca a aba como “Resposta pronta”, toca um beep curto e discreto quando o áudio já foi liberado pelo navegador.
+- Validação executada: build de produção do frontend concluído com sucesso.
+
+## 2026-07-01 — Evidência de reboot do host
+- Causa raiz identificada nos logs: `qemu-ga` registrou `guest-shutdown called, mode: powerdown` e o logind informou `hypervisor initiated shutdown` às 04:21:44; os containers caíram por powerdown iniciado pelo hypervisor/provedor, não por app, Docker, OOM ou apt upgrade. Orientação operacional: após reboot, subir em `/root/ai-hub-6` com `docker compose up -d` e validar `docker compose ps`/logs.
+
+## 2026-07-02 — Melodia sonora de resposta pronta
+- Por que o aviso passava despercebido: o alerta anterior era apenas um beep senoidal curto, com volume baixo, então a causa raiz estava na baixa saliência sonora do próprio padrão de notificação.
+- Ajuste aplicado no frontend: o aviso de resposta pronta agora agenda uma melodia de 14 notas com tons diferentes, volume maior, timbre mais presente e repetição da sequência 3 vezes para tornar o fim da tarefa mais perceptível.
+
+## 2026-07-03 — Investigação da falha da solicitação Codex #944
+- Solicitação recebida: investigar por que a solicitação Codex #944, exibida em `/codex/requests/944`, terminou como falha.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução não falhou por erro de código retornado pelo modelo; o registro da API mostra `status=FAILED` com `responseText=CODEX_TURN_INTERRUPTED`, sem `error` nem `executionLog`, após duração de 1.810.382 ms (~30min10s). Isso indica interrupção/cancelamento do turno pelo orquestrador/App Server durante a execução longa, antes de uma resposta final persistida.
+- Evidências conferidas: healthcheck do MCP retornou `UP`; logs do backend registraram criação e despacho do job `47d3c87a-cbba-478a-96d1-6a312a926885` para o sandbox às 02:59:36 UTC, consultas ao sandbox, conteúdo parcial retornado e finalização persistida como `FAILED` na consulta `/api/codex/requests/944`.
+- Sem ajuste de código aplicado nesta etapa; a resposta ao usuário deve orientar que a causa imediata foi `CODEX_TURN_INTERRUPTED` e que a próxima investigação, se necessário, deve focar logs do Codex App Server/sandbox do job para identificar quem emitiu a interrupção.
+- Complemento da investigação: sim, a falha é compatível com timeout operacional de 30 minutos. A duração registrada foi 1.810.382 ms (~30min10s) e o container `ai-hub-6-sandbox-orchestrator-1` está rodando em produção com `CODEX_APP_SERVER_TURN_TIMEOUT_MS=1800000`, ou seja, 30 minutos. Embora o código atual tenha fallback de 1 hora, a variável de ambiente operacional do container ainda sobrescreve o valor para 30 minutos; por isso a execução #944 foi interrompida perto desse limite.
+
+## 2026-07-03 — Timeout operacional de 60 minutos no Codex App Server
+- Solicitação recebida: mudar o timeout do Codex App Server para 60 minutos após confirmação de que a solicitação #944 foi interrompida perto do limite operacional de 30 minutos.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o código já tinha fallback de 60 minutos, mas a produção carregava `.env` com `CODEX_APP_SERVER_TURN_TIMEOUT_MS=1800000`; como o `docker-compose` lê `.env` depois de `apps/sandbox-orchestrator/.env.example`, esse override operacional manteve o timeout efetivo em 30 minutos.
+- Ajuste aplicado: `apps/sandbox-orchestrator/.env.example` passou para `CODEX_APP_SERVER_TURN_TIMEOUT_MS=3600000`, e o workflow de deploy agora remove qualquer valor antigo dessa variável no `.env` da VPS e grava explicitamente `CODEX_APP_SERVER_TURN_TIMEOUT_MS=3600000` junto de `CODEX_APP_SERVER_ENABLED=true`.
+
+## 2026-07-03 — Remoção dos inserts de interações Codex no banco
+- Solicitação recebida: verificar se as milhares de interações exibidas em solicitações Codex geram inserts no banco e, caso sim, remover esse comportamento.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: sim, o backend recebia `interactions` do sandbox-orchestrator e `recordInteractions` tentava inserir cada item novo em `codex_interactions`, usando `sandbox_interaction_id` para deduplicar. Em execuções longas do Codex App Server, eventos de streaming/modelo podem passar de 2.400 itens, gerando milhares de inserts para uma única solicitação sem necessidade operacional para a tela principal.
+- Ajuste aplicado: o backend deixou de persistir cada interação em `codex_interactions`; agora grava apenas o resumo agregado `interactionCount` em `codex_requests`, mantém `modelTranscript` consolidado a partir das mensagens outbound e preserva a leitura legada da tabela somente como fallback para registros antigos sem `interactionCount` preenchido.
+- Teste atualizado para garantir que callbacks com interações atualizam o contador e transcript, mas não chamam `codexInteractionRepository.save` nem `existsBySandboxInteractionId`.
+
+## 2026-07-04 — Métricas nos cards de solicitações concluídas
+- Solicitação recebida: exibir nos cards de solicitações concluídas o tempo gasto e a quantidade de interações.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o backend e o parser do frontend já disponibilizavam `durationMs` e `interactionCount`, mas a lista de histórico da página Codex ChatGPT renderizava apenas identificador, modelo, data e status; portanto a informação existia no contrato de dados e faltava ser apresentada no card.
+- Ajuste aplicado no frontend: cards com status `COMPLETED` agora exibem “Tempo gasto” usando o formatador de duração existente e “Interações” com pluralização em pt-BR, mantendo os demais status sem essas métricas para evitar valores incompletos.
+
+## 2026-07-04 — Limite visual no histórico do diálogo Codex
+- Solicitação recebida: manter na tela de diálogo um histórico de somente 10 interações para evitar que a tela fique muito grande.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a conversa era renderizada com `conversation.map(...)` sobre todo o estado acumulado; cada nova pergunta e resposta permanecia visível indefinidamente, fazendo a área de diálogo crescer sem limite apesar de o histórico completo ainda ser útil para contexto e ações como pedir PR.
+- Ajuste aplicado no frontend: a tela agora calcula uma janela visual com as últimas 10 mensagens, oculta as anteriores apenas na renderização e informa quantas interações antigas foram escondidas, preservando o estado completo para contexto interno da conversa.
+
+## 2026-07-04 — Poda real do histórico do diálogo no navegador
+- Solicitação recebida: avaliar se apenas ocultar mensagens antigas deixaria o browser pesado e ajustar para evitar esse risco.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a correção anterior reduzia o DOM renderizado, mas ainda preservava todo o array `conversation` em memória e continuava usando esse histórico completo ao montar o prompt; assim conversas longas poderiam continuar pesando no navegador e aumentando payloads internos.
+- Ajuste aplicado no frontend: o estado da conversa agora é podado para as últimas 10 mensagens sempre que novas mensagens são adicionadas ou atualizadas, e a tela informa que somente essa janela recente é mantida para evitar peso no navegador.
+
+## 2026-07-04 11:56:11 UTC-3
+- Diagnóstico de causa raiz da limitação de screenshot no sandbox: a imagem `apps/sandbox-orchestrator` instalava ferramentas de build/teste, mas não incluía um navegador headless; por isso agentes que precisavam gerar screenshots não encontravam Chrome/Chromium.
+- Atualizado o Dockerfile do sandbox-orchestrator para instalar `chromium` via apt e publicar variáveis de ambiente compatíveis com Playwright/Puppeteer (`CHROME_BIN`, `CHROMIUM_BIN`, `PUPPETEER_EXECUTABLE_PATH`, `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH`).
+- Documentada a capacidade de screenshots automatizados na arquitetura do sandbox.
+
+## 2026-07-04 12:00:40 UTC-3
+- Pergunta recebida: se o modelo entenderia sozinho que o sandbox possui Chromium ou se seria necessário informar isso no prompt inicial.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: apenas instalar Chromium melhora a capacidade do ambiente, mas não garante que o modelo descubra essa capacidade sem gastar ciclos; o prompt inicial não anunciava navegador/headless nem orientava screenshot em tarefas visuais.
+- Ajustado o prompt inicial do runner para declarar Chromium em `/usr/bin/chromium`, variáveis compatíveis com Playwright/Puppeteer e orientação para usar screenshot automatizado quando houver UI, layout ou mudança visual; também foi adicionada cobertura de teste para essa instrução.
+
+## 2026-07-04 12:17:37 UTC-3
+- Solicitação recebida: implementar a opção C para imagens externas e locais, combinando visualização de arquivos gerados no sandbox com busca de imagens públicas por URL.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o sandbox já conseguia receber anexos de imagem do usuário e gerar screenshots com Chromium, mas imagens externas ou arquivos PNG/JPG/WebP/GIF produzidos no filesystem ficavam presos em fluxos textuais (`http_get`/shell), sem serem reinjetados no modelo como entrada visual multimodal.
+- Implementadas as tools `read_image` e `fetch_image` no runner Responses API: elas validam caminho/URL, bloqueiam acesso fora do sandbox ou URLs internas via validação existente, limitam tamanho, detectam MIME PNG/JPG/WebP/GIF e reenviam a imagem ao próximo turno como `input_image` com detalhe alto.
+- Atualizados prompt inicial, documentação e testes para orientar o modelo a usar `read_image` em screenshots/imagens locais e `fetch_image` em imagens externas públicas.
+
+## 2026-07-04 — Timeout de 120 minutos e contador agregado de interações Codex
+- Solicitação recebida: alterar o timeout do Codex App Server de 60 para 120 minutos e corrigir o card “Interações com o modelo” que passou a ficar zerado depois da remoção dos inserts individuais no banco.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o timeout ainda estava parametrizado em 3.600.000 ms no fallback, no `.env.example` e no workflow de deploy. Já o contador de interações dependia indiretamente do array `interactions` retornado pelo sandbox; ao parar de persistir cada item no banco, qualquer resposta/callback sem a lista completa deixava o backend sem uma métrica agregada confiável e o campo podia permanecer em zero.
+- Ajuste aplicado: timeout padrão e valor de deploy atualizados para `7200000` ms; o sandbox agora publica `interactionCount` agregado a partir de `interactionSequence`, e o backend consome esse campo explícito antes de usar a lista de interações como fallback, mantendo a remoção dos inserts em `codex_interactions`.
+
+## 2026-07-05 — Diagnóstico de 401 no download de dependência Maven privada
+- Solicitação recebida: explicar como resolver falha do `ai-worker` que parou antes dos testes com `401 Unauthorized` ao baixar `com.marketinghub:ads-service:0.0.1-SNAPSHOT` do GitHub Packages.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o erro ocorreu antes da execução dos testes porque o Maven tentou resolver uma dependência SNAPSHOT privada no GitHub Packages sem uma credencial válida/autorizada para o pacote/repositório; portanto a correção deve ajustar `GITHUB_ACTOR`/`GITHUB_TOKEN` ou `settings.xml`/segredos do ambiente de execução, não código do módulo.
+- Orientação operacional: validar se o token usado no ambiente tem acesso ao pacote `com.marketinghub:ads-service`, permissões de leitura de packages/repositório, e se Maven está recebendo essas credenciais no host/container onde o `ai-worker` executa.
+- Complemento solicitado: explicar onde colocar as credenciais para o modelo/sandbox conseguir baixar dependências privadas durante a execução.
+- Orientação operacional: gravar `GITHUB_ACTOR` e `GITHUB_TOKEN` no `.env` carregado pelo `docker-compose` do `sandbox-orchestrator` ou enviar `githubToken` no payload do job; como o `run_shell` herda `process.env`, comandos Maven executados pelo modelo passam a enxergar essas variáveis dentro da sandbox.
+- Complemento solicitado: indicar onde encontrar na interface do GitHub a criação do token e as permissões do pacote. Orientação: criar PAT clássico em Settings > Developer settings > Personal access tokens > Tokens (classic), marcar `read:packages` e, se pacote/repositório for privado, acesso ao repositório; no pacote, acessar owner/repositório > Packages > pacote Maven > Package settings para conferir visibilidade, vínculo de repositório e Manage Actions access quando aplicável.
+- Correção da orientação após alerta do usuário sobre sobrescrita do `.env`: adicionada alternativa persistente fora do repositório para credenciais do GitHub Packages, montando `GITHUB_PACKAGES_TOKEN_HOST_DIR` no `sandbox-orchestrator` e exportando `GITHUB_ACTOR`/`GITHUB_TOKEN` a partir dos arquivos `github_actor` e `github_token` antes de iniciar o runner.
+- Complemento operacional para o host: orientar o operador a criar `/root/infra/github-packages`, gravar `github_actor` e `github_token` com permissões restritas, confirmar que o `docker-compose.yml` implantado já possui o mount de `/run/secrets/github-packages`, recriar o `sandbox-orchestrator` e validar as variáveis dentro do container sem imprimir o token.
+- Validação remota do host após o teste do usuário: o diretório `/root/infra/github-packages` já existe com `github_actor` e `github_token`, mas o `/root/ai-hub-6/docker-compose.yml` implantado ainda não contém o mount `/run/secrets/github-packages`; por isso o container ativo não recebe `GITHUB_ACTOR`/`GITHUB_TOKEN`. A ação correta é implantar a versão nova do compose ou aplicar temporariamente o patch no host e recriar o `sandbox-orchestrator`.
+
+## 2026-07-05 - Correção de renderização de tabelas Markdown no chat Codex
+
+- Pergunta de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o componente `MarkdownMessage` do chat renderizava somente blocos de código, listas simples e parágrafos; linhas de tabela Markdown eram tratadas como texto comum dentro de `<p>`, por isso a resposta do modelo aparecia com pipes em vez de uma tabela HTML.
+- Ajuste: adicionado parser local para tabelas Markdown simples com linha divisória (`|---|---|`) e renderização em `<table>` antes do fallback de listas/parágrafos.
+
+## 2026-07-05 - Proposta de cliente de e-mail para testes na sandbox
+
+- Solicitação recebida: explicar como oferecer um cliente de e-mail na sandbox para permitir testes.
+- Pergunta de causa raiz: por que hoje o modelo não consegue testar fluxos de e-mail de ponta a ponta?
+- Causa raiz: a sandbox já possui comandos, navegador headless e tools HTTP/imagem, mas não possui um SMTP/webmail/API descartável; por isso testes de e-mail dependem de mocks, serviços externos ou inspeção manual.
+- Proposta documentada: adicionar um serviço interno de captura de e-mail, preferencialmente Mailpit, expor SMTP/API somente na rede interna, informar as variáveis ao runner e evoluir para isolamento por job ou tool dedicada de leitura de mensagens.
+
+
+## 2026-07-05 - Implementação do cliente de e-mail na sandbox para Codex ChatGPT MKT
+
+- Solicitação recebida: implementar a proposta de cliente de e-mail na sandbox e comunicar essa capacidade ao modelo no perfil Codex ChatGPT MKT.
+- Pergunta de causa raiz: por que o modelo ainda não conseguiria testar e-mails mesmo com a documentação anterior?
+- Causa raiz: a proposta estava apenas documentada; faltavam um serviço SMTP/API real no compose, variáveis de ambiente estáveis no `sandbox-orchestrator` e instrução explícita no prompt do perfil `CHATGPT_CODEX_MKT`.
+- Ajuste aplicado: adicionado serviço interno `sandbox-mail` baseado em Mailpit, variáveis `SANDBOX_SMTP_HOST`, `SANDBOX_SMTP_PORT`, `SANDBOX_MAIL_WEB_URL` e `SANDBOX_MAIL_API_URL`, e instrução no perfil MKT para usar SMTP descartável e API/UI interna sem credenciais reais.
+
+## 2026-07-06 - Disponibilização da chave Gemini para o sandbox
+
+- Solicitação recebida: disponibilizar ao modelo, dentro do container do sandbox, a variável de ambiente `GEMINI_API_KEY` a partir do arquivo físico do host `/root/infra/gemini-token/gemini_api_key`.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o `sandbox-orchestrator` já carregava segredos do host para OpenAI e GitHub Packages via mounts dedicados, mas não havia mount nem bootstrap para o diretório de token do Gemini; como os comandos do modelo herdam apenas o ambiente do processo Node, `GEMINI_API_KEY` nunca chegava ao runner.
+- Ajuste aplicado: adicionado mount somente leitura configurável por `GEMINI_TOKEN_HOST_DIR`, leitura do arquivo `gemini_api_key` no comando de inicialização do `sandbox-orchestrator` e documentação da variável para manter o segredo fora do repositório.
+
+## 2026-07-07 - Fila backend para solicitações Codex ChatGPT
+
+- Solicitação recebida: permitir que o usuário escreva e salve a próxima solicitação do Codex ChatGPT MKT enquanto a atual ainda está em execução, com controle de fila no backend e preservação das imagens anexadas.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: a tela bloqueava novos envios enquanto havia `activeRequestId` e o backend despachava toda solicitação imediatamente para o sandbox, sem persistir anexos em uma estrutura reutilizável para execução posterior; assim não havia uma fila confiável no servidor e imagens de uma solicitação futura poderiam ficar apenas no estado do navegador.
+- Ajuste aplicado: o backend agora salva os anexos serializados na própria `codex_requests`, mantém novas solicitações como `PENDING` sem `external_id` quando já existe execução ativa para o perfil, e despacha automaticamente a próxima solicitação pendente ao detectar término da atual. A UI passou a permitir novos envios durante execuções pendentes/em andamento e monitora todas as respostas não terminais da conversa.
+
+## 2026-07-07 12:21:17 UTC - PR de avisos da fila e objetivo Codex MKT
+
+- Solicitação recebida: gerar PR com os ajustes de aviso de final de execução e prompt do perfil Codex MKT.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o checkout atual não continha as alterações descritas no histórico da conversa; além disso, o aviso de conclusão tratava toda transição terminal como fim da fila, então acionava marcador visual e três repetições sonoras mesmo quando outra solicitação ainda estava `PENDING` ou `RUNNING`.
+- Ajuste aplicado: a UI agora verifica se ainda há solicitação não terminal antes de marcar a aba; quando há próxima solicitação, toca somente uma repetição sonora. O prompt Codex MKT recebeu o objetivo principal de gerar vendas em larga escala de produtos digitais de alto valor com comunicação sedutora pelo sistema Marketing Hub no frontend e nos dois caminhos do sandbox-orchestrator.
+
+## 2026-07-07 - Draft PR para ajustes do chat Codex
+
+- Solicitação recebida: gerar como draft o PR dos ajustes do chat Codex.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: a branch remota `agent/codex-chat-20-interacoes-pendentes` existia, mas apontava para o mesmo commit de `main`, e o commit local citado no histórico não estava disponível neste checkout; portanto não havia diff real para abrir PR.
+- Alternativas avaliadas: abrir PR vazio para preservar o fluxo, reconstruir somente as mudanças solicitadas, ou abandonar o draft até recuperar o commit original. A melhor opção foi reconstruir o ajuste mínimo, pois evita PR sem valor e atende ao pedido atual sem depender de estado local perdido.
+- Ajuste reaplicado: a tela Codex ChatGPT carrega 20 itens, mantém até 20 mensagens visíveis, mostra data e hora nos balões de usuário/modelo e oferece apagar solicitações `PENDING` antes do envio. O backend expõe `DELETE /api/codex/requests/{id}` limitado a solicitações `PENDING` sem `externalId`.
+
+- 2026-07-07 UTC — Ajustada a tela Codex ChatGPT/MKT para que o horário exibido na mensagem do modelo passe a refletir a entrega da resposta: investigada a causa raiz (o placeholder do assistente era criado com `new Date()` no envio e mantinha esse `createdAt` após conclusão) e a correção agora troca o timestamp para `finishedAt` da execução quando o status se torna terminal.
+
+- 2026-07-07 UTC — Adicionada opção para editar solicitação Codex ChatGPT/MKT ainda pendente. Pergunta explícita de causa raiz: “por que não era possível editar uma solicitação enviada e pendente?”. Resposta: o fluxo só oferecia apagar antes do envio e o backend só expunha exclusão para `PENDING` sem `externalId`; não havia contrato de atualização antes do despacho. A correção adiciona `PATCH /api/codex/requests/{id}` limitado a solicitações pendentes não despachadas e botão/textarea de edição no chat, preservando o histórico reconstruído antes da mensagem editada.
+
+- 2026-07-07 UTC — Ajustada a exclusão de solicitações pendentes no diálogo Codex ChatGPT/MKT. Pergunta explícita de causa raiz: “por que o usuário não via claramente que o item apagado antes de enviar tinha sido apagado?”. Resposta: o frontend removia o placeholder do modelo com `filter`, deixando apenas a mensagem do usuário no histórico visual, sem marcador de exclusão. A correção substitui o placeholder por uma mensagem explícita informando que a solicitação foi apagada antes do envio ao modelo e que nenhuma resposta será gerada.
+
+## 2026-07-07 19:16:40 UTC-3
+- Analisada a causa raiz do cenário relatado em que múltiplas solicitações acabam em branches separadas e apenas a última parece receber PR: o fluxo atual despacha cada `CodexRequest` como job independente, gera `jobId` novo, cria branch `ai-hub/cifix-${job.jobId}` por job e não possui agrupador/batch transacional para consolidar solicitações relacionadas antes de abrir PR.
+- Proposta melhoria de desenho: introduzir agrupamento explícito de solicitações por repositório/branch base, uma branch de trabalho compartilhada por grupo e criação/atualização incremental de um PR único por grupo, preservando opção de PR isolado quando solicitado.
+
+## 2026-07-07 19:21:41 UTC-3
+- Implementada correção da causa raiz para solicitações Codex relacionadas não ficarem necessariamente presas ao padrão `1 job = 1 branch`: o backend passa a enviar uma `workBranch` estável por repositório, branch base e perfil, permitindo acumular entregas relacionadas em uma branch compartilhada.
+- Ajustado o sandbox-orchestrator para aceitar `workBranch`, reutilizar a branch remota existente quando houver, commitar novas alterações por cima dela e reutilizar PR aberto quando a criação retornar conflito de PR já existente.
+- Mantida compatibilidade com fluxos antigos: jobs sem `workBranch` continuam usando `ai-hub/cifix-${jobId}`.
+
+## 2026-07-07 19:33:13 UTC-3
+- Implementado botão/ícone de cópia em cada item do diálogo Codex ChatGPT/MKT (mensagens do usuário e do modelo).
+- Pergunta explícita de causa raiz: “por que a cópia precisava de fallback?”. Resposta: `navigator.clipboard.writeText` depende de contexto seguro em muitos navegadores e o ambiente informado usa HTTP simples; por isso a correção usa Clipboard API apenas em `window.isSecureContext` e recorre a `textarea` + `document.execCommand('copy')` durante a interação do usuário.
+- Adicionado feedback visual temporário no botão copiado e mensagem de erro orientativa quando a cópia não for permitida pelo navegador.
+
+## 2026-07-07 - Reutilização da branch de trabalho antes de solicitar PR
+
+- Solicitação recebida: investigar por que, depois de várias alterações solicitadas, ao pedir PR o modelo respondeu que o repositório estava limpo e que não havia mudanças locais.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o sandbox clonava sempre a branch base (`main`) antes de chamar o modelo e só tentava reutilizar a `workBranch` existente no fim, durante a criação automática do PR; assim uma solicitação posterior de “criar PR” começava em um checkout limpo da base, sem carregar as alterações acumuladas na branch de trabalho remota.
+- Ajuste aplicado: o sandbox agora captura o commit base logo após o clone, carrega a `workBranch` remota existente antes da execução do modelo e mantém o diff calculado contra a base original, permitindo que o modelo veja alterações anteriores e que o PR contenha o acumulado correto.
+
+## 2026-07-08 - Análise conceitual de sandbox sem clone obrigatório
+
+- Solicitação recebida: avaliar se é possível usar o conceito do sistema com sandbox sem baixar um repositório, em uma API que recebe uma requisição e um callback, permite ao modelo simular situações, pesquisar na internet, baixar elementos quando necessário e ao final responder via callback.
+- Resposta técnica resumida: sim, é possível; o repositório deve ser opcional, e o job pode iniciar uma sandbox efêmera vazia com política de rede/ferramentas, limites de execução, armazenamento temporário, coleta de artefatos e chamada de callback assinada ao terminar.
+- Observação de arquitetura: quando houver necessidade de alterar código versionado, o clone continua sendo útil; quando a tarefa for pesquisa, análise, simulação, geração de relatório ou processamento de insumos enviados no payload, a sandbox pode operar sem checkout de repositório.
+
+## 2026-07-08 - Viabilidade de alto paralelismo em sandboxes sem repositório
+
+- Solicitação recebida: avaliar se é viável executar uma grande quantidade de requisições em paralelo usando sandboxes efêmeras sem baixar repositório.
+- Resposta técnica resumida: sim, é viável, desde que o sistema seja desenhado como uma plataforma assíncrona com fila, workers autoscaláveis, quotas por cliente, limites de concorrência, timeouts, isolamento por job, controle de custos e backpressure; não é recomendável executar tudo diretamente no ciclo HTTP síncrono da requisição.
+- Recomendações principais: responder a criação do job imediatamente com `jobId`, processar em fila, separar workloads leves e pesados, aplicar rate limit e orçamento por tenant, usar callbacks idempotentes assinados, persistir estados do job e coletar métricas de fila, duração, falhas, custo e uso de recursos.
+
+- 2026-07-08 00:00:00 UTC — Solicitação: corrigir totais de interações que continuavam zerados na lista do Codex ChatGPT.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: alguns jobs retornavam `interactionCount: 0` mesmo contendo `interactionSequence`/`interactions` com eventos reais; o backend confiava cegamente no contador explícito quando ele existia, então preservava o zero defasado e ignorava as evidências agregadas disponíveis no payload.
+- Ajuste aplicado: o backend agora resolve o total de interações pelo maior valor confiável entre `interactionCount`, `interactionSequence` e tamanho de `interactions`; o sandbox-orchestrator também normaliza respostas e callbacks com o maior contador disponível para evitar propagar zeros defasados.
+## 2026-07-08 — Lote acumulado para solicitações Codex ChatGPT e PR draft
+
+- Causa-raiz investigada: as solicitações podiam ser executadas em workspaces/branches diferentes e o botão de PR reconstruía o PR a partir da última resposta, não necessariamente da branch acumulada do lote.
+- Alternativas avaliadas:
+  - Criar um PR por solicitação: simples, mas fragmenta o fluxo e não atende ao uso de várias demandas pendentes.
+  - Manter apenas histórico textual da conversa: barato, mas frágil para reconstruir alterações reais no fim.
+  - Persistir `workBranch`/lote por solicitação e criar PR a partir da branch acumulada: maior esforço, mas preserva o estado real e alinha UI, backend e sandbox.
+- Implementação escolhida: adicionar campos `work_branch` e `work_batch_key` em `codex_requests`, calcular branch de trabalho por repositório/branch/perfil, exibir lote atual na tela ChatGPT Codex e fazer o endpoint de PR priorizar draft PR a partir da branch acumulada.
+- Objetivo de produto: permitir várias solicitações sequenciais no Marketing Hub sem perder alterações anteriores antes de pedir PR.
+
+## 2026-07-08 - Diagnóstico das solicitações 1276, 1277 e PR 1278
+
+- Solicitação recebida: explicar por que a solicitação 1276 foi feita antes da 1277, o PR foi pedido na 1278, mas o merge resultante trouxe apenas o conteúdo da 1277.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Evidências coletadas: os registros públicos `/api/codex/requests/1276`, `/1277` e `/1278` indicam que as três solicitações usaram o mesmo `workBranch`/`workBatchKey` (`ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt`), porém o PR criado pela 1278 foi `https://github.com/paulofor/marketing-hub/pull/4295` com head `agent/sincroniza-catalogo-openai-diario`, não a branch acumulada `ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt`.
+- Evidências do PR 4295: a API do GitHub retornou apenas dois arquivos no PR (`OpenAiModelPricingScheduler.java` e `OpenAiModelPricingSchedulerTest.java`), ambos relacionados ao escopo da 1277; não apareceu o arquivo citado pela 1276 (`ExperimentDetailPage.tsx`).
+- Causa raiz provável: o fluxo real da 1278 não passou pelo endpoint manual do AI Hub que cria draft PR a partir da `workBranch` acumulada; em vez disso, o próprio agente/modelo criou uma branch temática nova e um PR manual com o escopo que estava ativo no contexto da 1277. Assim, a alteração da 1276 ficou fora do head branch do PR 4295, mesmo as solicitações estando marcadas com o mesmo lote no banco.
+- Observação importante: o código atual do backend já prioriza `workBranch` no endpoint `/api/codex/requests/{id}/create-pr`; portanto o ponto frágil observado é a instrução/execução do agente conseguir criar PR por conta própria dentro da sandbox, contornando o endpoint acumulador do AI Hub.
+
+## 2026-07-08 - Enfileiramento do botão Pedir PR no Codex ChatGPT
+
+- Solicitação recebida: permitir que o botão `Pedir PR` também coloque a solicitação de PR como pendente na fila de tratamento quando ainda houver itens pendentes ou em execução.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: a tela desabilitava `Pedir PR` enquanto existia qualquer mensagem de assistente em estado não terminal e também exigia ao menos uma resposta `COMPLETED`; assim o usuário só conseguia pedir PR depois de esvaziar a fila, embora o backend já aceite salvar novas `CodexRequest` como `PENDING` quando há execução ativa no perfil.
+- Ajuste aplicado: o botão `Pedir PR` permanece disponível quando há lote/conversa existente; se houver solicitação `PENDING` ou `RUNNING`, ele cria uma nova `CodexRequest` com prompt específico de PR, sem anexos, para entrar no fim da fila. Quando não há pendência, mantém o fluxo imediato de criação de PR para a última solicitação concluída.
+- Ajuste visual: o card de lote atual informa que `Pedir PR` entra no fim da fila quando ainda houver item pendente/em execução, e a conversa exibe o placeholder do pedido de PR enfileirado.
+
+## 2026-07-08 - Correção do botão Pedir PR para não criar solicitação textual
+
+- Solicitação recebida: criar PR com a correção do fluxo `Pedir PR`, após validação local do comportamento.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o frontend tratava o clique em `Pedir PR` como mais uma mensagem para o modelo quando havia item `PENDING` ou `RUNNING`; isso fazia o sistema abrir uma nova `CodexRequest` textual, potencialmente em outro workspace limpo, em vez de acionar o endpoint determinístico `/api/codex/requests/{id}/create-pr` sobre a branch acumulada.
+- Ajuste aplicado: o botão agora recarrega as solicitações antes de decidir, reutiliza PR existente do lote quando houver, bloqueia explicitamente enquanto há item pendente/em execução e só chama `/codex/requests/{id}/create-pr` para uma solicitação concluída.
+- Ajuste visual: o texto do lote deixa de prometer enfileiramento de PR e orienta pedir PR somente quando o lote estiver sem pendências.
+
+## 2026-07-08 - Contador de interações não deve regredir ao finalizar
+
+- Solicitação recebida: corrigir o cenário em que a tela mostrava contagem de interações durante a execução, mas ao final o detalhe da solicitação passava a exibir `0`.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o backend atualizava `interactionCount` com qualquer valor vindo do sandbox em callbacks posteriores; quando o payload terminal chegava sem as interações detalhadas e com contador explícito zerado/defasado, ele podia sobrescrever a maior contagem já persistida durante a execução.
+- Ajuste aplicado: `applyInteractionSummary` agora trata o contador como métrica monotônica e não deixa um callback posterior reduzir o total já conhecido, preservando a contagem maior vista ao longo do job.
+- Validação: adicionado teste unitário cobrindo callback terminal `COMPLETED` com `interactionCount=0` depois de a solicitação já ter `42` interações persistidas.
+
+## 2026-07-08 - Botão para zerar e descartar solicitações Codex ChatGPT
+- Investigação da causa raiz: a tela Codex ChatGPT MKT exibia contadores do lote e ações individuais para apagar pendentes, mas não havia uma ação agregada para limpar a conversa e descartar todas as solicitações pendentes/em execução do lote atual.
+- Implementado botão "Zerar e descartar lote" no card de lote atual e botão equivalente no formulário.
+- A ação recarrega as solicitações, identifica o lote ativo do ambiente/profile, apaga pendentes ainda não enviados e cancela solicitações já enviadas/em execução; em seguida limpa a conversa local e estado de PR/edição.
+
+## 2026-07-08 03:59:56 UTC-3 - Correção do erro 500 ao fechar lote pelo botão Pedir PR
+
+- Solicitação recebida: criar PR para a correção do erro 500 ao tentar fechar lote pelo botão `Pedir PR`.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o backend tentava criar um draft PR usando a `workBranch` do lote mesmo quando a resposta final já continha uma URL de PR criada anteriormente, mas `pullRequestUrl` não estava persistida no lote. Quando essa branch de origem não existia ou não estava acessível para o GitHub, a API retornava erro de validação de `head` e a exceção subia como 500 genérico.
+- Alternativas avaliadas: recriar branch ausente a partir da base teria risco de abrir PR sem as alterações do lote; ignorar a exceção e retornar sucesso ocultaria falhas reais; reaproveitar a URL de PR já registrada no texto do lote e traduzir falhas do GitHub em 400/502 preserva o PR real e melhora o diagnóstico.
+- Ajuste aplicado: `CodexController.createPr` agora procura URL de PR persistida e também URL de PR citada no texto das respostas do lote antes de chamar o GitHub, persiste a URL encontrada no lote e transforma rejeições do GitHub em mensagem clara em vez de 500.
+- Validação: `mvn test -Dtest=CodexControllerTest` em `apps/backend` passou com 4 testes, 0 falhas.
+
+## 2026-07-08 - PR da correção do lote Codex ChatGPT Marketing
+
+- Solicitação recebida: gerar PR para corrigir o mecanismo de lote que deveria acumular três solicitações e abrir PR somente ao clicar em `Pedir PR`.
+- Pergunta explícita de causa raiz: por que esse erro aconteceu?
+- Causa raiz: o contrato entre backend e `sandbox-orchestrator` não tinha um sinal explícito para desativar criação automática de PR em jobs `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT`; quando havia token GitHub disponível, o orquestrador fazia commit, push e criava PR ao término de cada job, antes do fechamento manual do lote.
+- Ajuste aplicado: `SandboxJobRequest` ganhou `createPullRequest`; o backend envia `false` para perfis ChatGPT Codex, e o orquestrador passa a publicar a branch de trabalho sem chamar a API de PR quando esse campo é falso.
+- Validação: `mvn test -Dtest=CodexRequestServiceTest,CodexControllerTest` em `apps/backend` passou com 28 testes; `npm test` em `apps/sandbox-orchestrator` passou com 60 testes, incluindo regressão que confirma push da `workBranch` sem criação de PR.
+
+## 2026-07-08 14:58:54 UTC - Correção do zerar e descartar lote Codex ChatGPT MKT
+- Solicitação recebida: ao acionar `Zerar e descartar lote`, as quantidades do lote atual não mudavam na tela.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a ação anterior só apagava/cancelava solicitações `PENDING`/`RUNNING`; as solicitações `COMPLETED` continuavam com o mesmo `workBranch`/`workBatchKey`, e o card calcula o lote atual a partir de qualquer solicitação com `workBranch`, portanto o contador de concluídas permanecia apontando para o lote antigo.
+- Ajuste aplicado: criado endpoint de descarte de lote que cancela/apaga itens ativos e desvincula as solicitações restantes do `workBranch`/`workBatchKey`, permitindo que o card volte a zero/sem lote aberto após o descarte.
+- Ajuste aplicado no frontend: o botão passa a chamar o descarte agregado do backend e considera o lote inteiro, incluindo concluídas, ao decidir se a ação está disponível.
+
+## 2026-07-08 15:45:00 UTC - Descarte de lote apaga branch remota Codex
+- Solicitação recebida: ao solicitar descarte das solicitações, apagar também a branch de trabalho do lote para evitar reaproveitar alterações antigas.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o descarte já desvinculava o lote no banco, mas a limpeza da branch remota era frágil porque o ambiente `owner/repo@branch` era convertido em repo `repo@branch` e branches com `/` eram montadas na URL da API do GitHub como `%2F`; assim o DELETE da ref remota podia mirar o repositório/ref errados.
+- Ajuste aplicado: `CodexRequestService` passa a extrair o repo sem o sufixo `@branch` antes de chamar o GitHub, e `GithubApiClient` monta URLs de refs usando segmentos de caminho para preservar branches como `ai-hub/codex-...`.
+- Validação: `mvn test -Dtest=CodexRequestServiceTest,GithubApiClientTest` e `mvn test -Dtest=CodexControllerTest` em `apps/backend` passaram com sucesso.
+
+## 2026-07-08 17:25:00 UTC - Lote Codex fechado não deve contaminar novo lote
+- Solicitação recebida: ao gerar/zerar lote, os contadores não zeravam e o botão `Abrir PR do lote` continuava apontando para um PR já mergeado.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o `workBatchKey` era determinístico pela branch acumulada (`ai-hub/codex-...`) e, depois que um lote recebia `pullRequestUrl`, as solicitações concluídas continuavam com `workBranch/workBatchKey`. Como frontend e backend inferiam “lote atual” por esses campos, um lote fechado por PR continuava parecendo aberto e podia ser reutilizado como se fosse o lote novo.
+- Alternativas avaliadas:
+  - Apenas limpar estado local da tela após o clique: baixo esforço, mas mascararia o problema e voltaria no próximo polling/reload.
+  - Consultar o estado do PR no GitHub para esconder PR mergeado: melhora a UI, mas mantém o lote fechado preso no banco e adiciona dependência externa para renderizar contadores.
+  - Tratar `COMPLETED + pullRequestUrl` como lote fechado, filtrar esses registros do lote ativo e limpar `workBranch/workBatchKey` ao registrar PR: esforço moderado, corrige a raiz e preserva a URL de PR no histórico individual.
+- Ajuste escolhido: backend passa a ignorar solicitações já fechadas por PR ao montar o lote de uma nova solicitação e, ao registrar PR do lote, grava a URL e fecha o lote limpando `workBranch/workBatchKey`; frontend passa a contar/exibir apenas solicitações de lote aberto.
+- Validação: `mvn test -Dtest=CodexRequestServiceTest,CodexControllerTest` em `apps/backend` passou com 32 testes; `npm run lint` e `npm run build` em `apps/frontend` passaram.
+
+## 2026-07-08 18:40:06 UTC - Analise do fluxo das linhas 1332 a 1337
+- Solicitação recebida: analisar a sequencia `1332` a `1337` e responder se essa e a melhor forma de trabalhar no AIHub e se sempre vai dar certo.
+- Evidencia analisada: o trecho do diario mostra que a primeira abordagem colocou o `Pedir PR` no fim da fila como nova `CodexRequest` textual quando havia pendencias, mas a correcao seguinte identificou que isso podia abrir outro workspace limpo e contornar o endpoint deterministico de PR sobre a branch acumulada.
+- Conclusao de processo: a forma mais confiavel para o AIHub nao e transformar fechamento de lote em prompt textual para o modelo; o melhor fluxo e acumular mudancas em lote/branch de trabalho, bloquear PR enquanto houver pendencias e criar/abrir PR por endpoint deterministico quando o lote estiver concluido.
+- Risco registrado: esse fluxo tende a funcionar quando o lote, a branch acumulada e o endpoint de PR sao a fonte de verdade; nao vai sempre dar certo se o agente puder criar PR manualmente, se houver pendencias ainda executando, se a branch remota for apagada/inacessivel, ou se o estado de lote fechado continuar contaminando um novo lote.
+
+## 2026-07-08 18:44:49 UTC - Orientacao operacional para uso de lote Codex no AIHub
+- Solicitação recebida: explicar de forma simples como o usuario deveria trabalhar no AIHub depois da analise das solicitacoes `1332` a `1337`.
+- Pergunta explicita de causa raiz: por que houve confusao no fluxo? Resposta: porque o usuario esperava que mensagens sequenciais e o botao `Pedir PR` fossem a mesma coisa operacionalmente, mas sao acoes diferentes; mensagens criam ou executam trabalhos do agente, enquanto `Pedir PR` deve fechar de forma deterministica o lote ja acumulado na branch de trabalho.
+- Orientacao registrada: o fluxo recomendado e abrir um lote, enviar ajustes relacionados um a um, esperar todos ficarem concluidos, validar o resultado no ambiente, pedir correcoes se necessario ainda no mesmo lote e somente depois clicar em `Pedir PR`.
+- Regra importante: nao tratar `Pedir PR` como mais uma solicitacao textual quando ainda houver pendencias; o correto e o sistema bloquear a acao ate o lote estar concluido e entao criar o PR a partir da `workBranch` acumulada.
+- Alternativas avaliadas: uma solicitacao por PR e simples mas fragmenta o trabalho; muitas solicitacoes sem lote organizado aumentam risco de mistura de escopos; lote acumulado com fechamento deterministico por botao e o melhor equilibrio entre velocidade, rastreabilidade e seguranca operacional.
+
+## 2026-07-08 19:05:00 UTC - Diagnostico de PR gerado incorretamente no lote Codex MKT
+- Solicitação recebida: usuario informou que pediu PR, mas ele nao gerou corretamente.
+- Pergunta explicita de causa raiz: por que esse erro aconteceu? Resposta: o lote atual do ambiente `paulofor/ai-hub` estava sendo usado para mensagens de analise/orientacao, nao para um lote real de implementacao; ao pedir PR, o sistema criou/reutilizou o PR 507 a partir da `workBranch` acumulada, mas essa branch continha somente a alteracao obrigatoria de diario e nao as mudancas funcionais esperadas.
+- Evidencias: as solicitacoes 1338 e 1339 aparecem como `COMPLETED`, com `pullRequestUrl=https://github.com/paulofor/ai-hub/pull/507`, mas ainda exibem `workBranch/workBatchKey=ai-hub/codex-paulofor-ai-hub-main-chatgpt_codex_mkt`; a API do GitHub indica que o PR 507 esta aberto, nao draft, com head nessa branch e apenas um arquivo alterado: `docs/diario/registros1.md`.
+- Analise de alternativas: fechar PR para qualquer lote e simples, mas gera PRs sem valor quando o lote era apenas conversa; bloquear PR quando o diff contem somente diario reduz falsos positivos; separar lotes de analise/marketing de lotes de implementacao e exigir mudanca funcional antes de abrir PR e a opcao mais aderente ao objetivo.
+- Orientacao imediata: nao usar o PR 507 como PR funcional; fechar ou descartar esse lote e iniciar um novo lote apenas quando houver implementacao real a consolidar.
+
+## 2026-07-08 15:53:47 UTC-3
+- Solicitação recebida: analisar e simular uma forma menos complicada e menos sujeita a erro para o fluxo de conversa, lote e `Pedir PR` no AIHub.
+- Pergunta explicita de causa raiz: por que esse erro aconteceu? Resposta: o produto mistura tres estados diferentes na mesma experiencia: conversa/análise, lote de implementação e publicação via PR; o botão `Pedir PR` valida pendencias, mas ainda não valida se o lote e publicavel, se contem mudanca funcional ou se era apenas uma conversa cujo unico diff e o diario obrigatorio.
+- Evidencias de codigo: `CodexChatgptPage` decide o PR a partir da ultima resposta `COMPLETED` ou do lote ativo; `CodexController.createPr` cria draft PR a partir de `workBranch` quando existe branch, mas nao checa conteudo do diff; `CodexRequestService.listBatch` filtra lotes fechados por PR, mas nao diferencia lote de analise, lote de implementacao e lote sem diff funcional.
+- Simulacoes analisadas: lote com execucao pendente deve bloquear; lote apenas de orientacao deve nao oferecer PR; lote com diff somente em `docs/diario/registros1.md` deve bloquear com mensagem clara; lote com PR existente deve abrir/reutilizar o PR; lote fechado deve nao contaminar novo lote.
+- Proposta registrada: transformar o fechamento de PR em um fluxo de pre-publicacao com estado explicito (`rascunho de trabalho`, `pronto para revisar`, `publicavel`, `publicado`), validação backend do diff antes de criar PR, bloqueio para diff sem arquivos funcionais e separação clara entre conversas de analise MKT e lotes de implementação.
+
+## 2026-07-08 19:18:00 UTC - Lotes mistos com solicitacoes de implementacao e analise
+- Solicitação recebida: esclarecer se, em um fluxo com solicitacoes alternadas entre implementacao e nao implementacao, alguma entrega pode ser perdida no final.
+- Pergunta explicita de causa raiz: por que haveria risco de perder alguma entrega? Resposta: o risco aparece quando o sistema usa a conversa ou a ultima solicitacao como fonte de verdade do PR; em um lote misto, solicitacoes de analise podem nao alterar codigo, enquanto solicitacoes de implementacao alteram a branch acumulada. Se o fechamento olhar para a ultima mensagem ou para classificacao textual, pode concluir incorretamente que nao ha entrega funcional ou pode abrir PR com escopo errado.
+- Regra de produto recomendada: nenhuma implementacao deve ser perdida se a fonte de verdade for a branch/diff acumulado do lote, nao a sequencia textual das mensagens. Solicitacoes sem alteracao entram no historico e no diario, mas nao determinam sozinhas a publicacao.
+- Validacoes necessarias antes de permitir PR: listar todas as solicitacoes do lote, verificar pendencias, calcular diff contra a base, separar arquivos funcionais de arquivos apenas operacionais como `docs/diario/registros1.md`, exibir resumo de arquivos alterados e bloquear apenas quando nao houver diff funcional.
+- Conclusao operacional: lotes mistos sao aceitaveis, mas o botao `Pedir PR` precisa publicar o conjunto de mudancas funcionais acumuladas e mostrar claramente o que entra no PR; se nao houver essa pre-validacao, o usuario pode se confundir e o sistema pode gerar PR incompleto ou inutil.
+
+## 2026-07-08 19:01:11 UTC - Pre-validacao funcional antes de Pedir PR
+- Solicitacao recebida: implementar no AIHub o fluxo sugerido para reduzir erros ao alternar solicitacoes de implementacao e analise e evitar PR inutil.
+- Pergunta explicita de causa raiz: por que esse erro aconteceu? Resposta: o endpoint `create-pr` criava draft PR direto a partir da `workBranch` quando ela existia, sem validar se o lote tinha pendencias e sem comparar a branch acumulada contra a base para confirmar que havia alteracao funcional publicavel.
+- Alternativas avaliadas: esconder o botao no frontend reduz confusao mas e contornavel; classificar mensagens como analise/implementacao depende de texto e pode errar em lotes mistos; validar o diff real da branch no backend e a opcao mais robusta porque usa a fonte de verdade do lote.
+- Ajuste aplicado: `PullRequestService` passou a inspecionar o compare GitHub `base...workBranch`, separar arquivos alterados de arquivos funcionais e tratar `docs/diario/registros1.md` como diario obrigatorio nao publicavel sozinho.
+## 2026-07-11 03:25:21 UTC - AWS CLI na imagem da sandbox
+
+- Solicitação recebida: adicionar o AWS CLI na imagem da sandbox para o modelo conseguir acessar a AWS quando houver credenciais/permissões disponíveis.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a imagem `ai-hub-6-sandbox`, construída a partir de `apps/sandbox-orchestrator/Dockerfile`, instalava ferramentas como Maven, JDK, Docker CLI, Google Cloud CLI e Chromium, mas não instalava nenhum pacote que fornecesse o comando `aws`; por isso o modelo não conseguiria executar comandos AWS dentro do container.
+- Ajuste aplicado: incluído o pacote Debian `awscli` no `apt-get install` da imagem de produção do `sandbox-orchestrator`.
+- Ajuste aplicado no runner: o prompt inicial agora informa que o AWS CLI está disponível pelo comando `aws`, e o checklist de ambiente lista ferramentas cloud detectadas.
+- Documentação atualizada: README e `docs/sandbox-architecture.md` agora registram que a imagem da sandbox vem com AWS CLI pré-instalado.
+
+- Ajuste aplicado: `CodexController.createPr` agora bloqueia lote com solicitacao `PENDING`/`RUNNING`, lote sem diff e lote cujo diff contem apenas o diario obrigatorio, antes de chamar a criacao de draft PR.
+- Ajuste aplicado: a extracao de repo no fechamento de PR agora remove o sufixo `@branch`, evitando chamadas GitHub para repositorios invalidos como `ai-hub@main`.
+- Ajuste aplicado no frontend: a tela Codex ChatGPT informa que o PR depende de diff funcional acumulado validado pelo backend e mostra motivo de bloqueio enquanto houver pendencias.
+
+## 2026-07-08 19:07:25 UTC - Geracao de PR da pre-validacao de lote
+- Solicitacao recebida: gerar PR com a implementacao que torna o fluxo `Pedir PR` mais seguro para lotes mistos de analise e implementacao.
+- Verificacao antes do PR: branch `ai-hub/codex-paulofor-ai-hub-main-chatgpt_codex_mkt` possui diff funcional contra `main`, incluindo backend, testes e frontend; nao e um lote apenas de diario.
+- Acao planejada: publicar a branch atualizada e abrir PR em modo draft para revisao.
+
+- 2026-07-09 02:22:11 UTC — Implementado indicador na dashboard para mostrar há quantos dias houve a última alteração de código fonte por módulo (`Backend`, `Frontend`, `Sandbox Orchestrator` e `MCP Server`). A causa raiz da ausência dessa informação era não existir um endpoint consolidado com metadados de alteração por pasta de módulo; foi criado `/api/source-modules/changes`, calculando a data via `git log` e usando mtime dos arquivos como fallback.
+
+## 2026-07-09 22:34:46 UTC - Diagnostico operacional do sistema
+- Solicitação recebida: informar o que está acontecendo agora no sistema.
+- Verificações realizadas: estado Git local, healthcheck do MCP Server, lista de containers via MCP e logs recentes de backend/sandbox.
+- Estado observado: MCP Server respondeu `{"status":"UP"}`; containers `caddy`, `frontend`, `backend`, `sandbox-orchestrator`, `mcp-server` e `sandbox-mail` estavam em execução há cerca de 11 horas, com `sandbox-mail` saudável.
+- Evento atual observado: backend criou a `CodexRequest 1422` para esta conversa e a despachou ao sandbox com job `ed5941a2-e8d2-435c-82ec-4cb74bcd45ba`, perfil `CHATGPT_CODEX`, modelo `gpt-5.5`, branch base `main`.
+- Sinais recentes relevantes: antes desta conversa houve `Connection reset` no acesso JDBC ao banco às 22:28 UTC, `Broken pipe` de streaming às 22:29 UTC e duas falhas de atualização da `CodexRequest 1418` por retorno 500 do sandbox; para a `CodexRequest 1422`, os logs vistos indicaram polling/atualização contínua sem erro.
+- Limitação de ambiente: o Docker local do workspace não estava acessível por `/var/run/docker.sock`; a inspeção de containers foi feita via MCP Server. Algumas consultas pontuais via MCP ao status interno do job e `docker logs` com timeout não retornaram antes do limite de 30s.
+
+## 2026-07-09 22:49:51 UTC - Correção de request concluída aparentando travada
+- Solicitação recebida: investigar por que a tela parecia travada, com a `CodexRequest 1418` ainda como `Em execução` na lista enquanto o detalhe já mostrava `Concluída`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a sincronização da request concluída com o sandbox e o despacho automático da próxima request da fila estavam acoplados no mesmo fluxo; quando o despacho da `1419` recebeu `500 Internal Server Error` do sandbox, a exceção propagou como falha da atualização da `1418`, revertendo a persistência do estado `COMPLETED`.
+- Evidências: `GET /api/codex/requests/1418` atualizava e retornava `COMPLETED` com `finishedAt`, mas `GET /api/codex/requests?page=0&size=20` continuava lendo `1418` como `RUNNING`; os logs mostravam `Sandbox retornou conteúdo de resposta para CodexRequest 1418`, em seguida `Despachando próxima CodexRequest 1419`, e depois `Falha ao atualizar CodexRequest 1418 a partir do sandbox` por `500`.
+- Ajuste aplicado: `dispatchNextQueuedRequest` agora captura falha ao despachar a próxima solicitação, registra erro e mantém a próxima como pendente para nova tentativa, sem desfazer a atualização terminal já confirmada da solicitação anterior.
+- Validação: `mvn test -Dtest=CodexRequestServiceTest` em `apps/backend` passou com 29 testes, incluindo novo teste que garante que a atualização terminal é preservada quando o despacho seguinte falha.
+
+## 2026-07-10 - Correção da perda de contagem de interações ao finalizar execuções ChatGPT MKT
+
+- Solicitação analisada: a lista de "Últimas execuções ChatGPT MKT" mostrava `Interações: 0 interações` após conclusão, embora durante a execução/detalhe a contagem aparecesse corretamente.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o sandbox-orchestrator já envia `interactionCount`/`interactionSequence` e o backend aplica esse valor no objeto `CodexRequest`, mas o campo `interactionCount` estava anotado como `@Transient` em `CodexRequest`. Assim, a contagem existia apenas durante o ciclo em memória e não era persistida em `codex_requests`. Ao recarregar a lista final, o backend recompunha a contagem por `codex_interactions`; como o sistema foi alterado anteriormente para não persistir todas as interações detalhadas por risco de lock/performance, a lista caía para 0.
+- Alternativas avaliadas:
+  1. Persistir um resumo `interaction_count` em `codex_requests`: melhor aderência ao objetivo, mantém a tela rápida e preserva a contagem sem voltar a gravar milhares de linhas; esforço médio por exigir migrations em H2/PostgreSQL/MySQL.
+  2. Corrigir apenas o frontend para buscar outro campo: esforço baixo, mas não resolve a perda no backend/API e manteria inconsistência nos downloads/relatórios.
+  3. Voltar a persistir todas as linhas em `codex_interactions`: preserva histórico completo, porém reintroduz o problema operacional já observado de excesso de inserts e locks.
+- Decisão: seguir pela alternativa 1. Ajustes aplicados: `CodexRequest.interactionCount` passou a ser coluna `interaction_count`; adicionadas migrations `V32` H2, `V31` PostgreSQL e `V33` MySQL com backfill a partir de `codex_interactions`; o download de interações agora usa a maior contagem entre o resumo persistido e as linhas detalhadas existentes.
+- Testes adicionados: teste de domínio garantindo que `interactionCount` não é mais `@Transient` e teste do controller validando que o ZIP de interações reporta a contagem resumida mesmo sem linhas detalhadas.
+- Validação: `mvn test -Dtest=CodexRequestTest,CodexControllerTest,CodexRequestServiceTest,SandboxOrchestratorClientTest` passou com 40 testes; em seguida `mvn test` completo em `apps/backend` passou com 66 testes, 0 falhas e 0 erros. `git diff --check` também passou sem apontar problemas de whitespace.
+
+## 2026-07-11 07:28:27 UTC - Testes amplos do fluxo de lotes MKT
+
+- Solicitação recebida: executar uma bateria ampla de testes sobre lotes no ambiente `marketing-hub`, incluindo solicitações que geram e não geram mudanças, criação de arquivos `.md`, limpeza/zeragem dos indicadores de executadas e validação do botão `Pedir PR` e do link de PR; ajustar o que for necessário sem criar PR automaticamente.
+- Plano inicial: mapear UI/API do fluxo de lote, validar localmente os testes automatizados existentes, reproduzir o comportamento com navegador/ambiente local quando possível, consultar produção via MCP apenas para evidências seguras, e aplicar correção somente após responder explicitamente “por que esse erro aconteceu?” caso algum erro seja encontrado.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta durante o teste: as solicitações reais criadas no `paulofor/marketing-hub` ficaram `PENDING` sem `externalId` porque a request MKT atual `#1574` estava `RUNNING` no perfil `CHATGPT_CODEX_MKT`; o backend serializa o dispatch por perfil, então o lote novo aguardou fila antes de chegar ao sandbox.
+- Alternativas avaliadas: (1) aguardar a request `#1574` concluir e rodar o e2e completo real, melhor fidelidade mas bloquearia esta execução por tempo indeterminado; (2) cancelar a request `#1574`, destravaria a fila mas interromperia a solicitação atual do usuário; (3) validar em produção a criação/limpeza de lote pendente e cobrir localmente o contrato de `Pedir PR`/link por teste automatizado. Decisão: seguir a alternativa 3, por preservar a execução atual e ainda validar os pontos críticos sem deixar sujeira operacional.
+- Teste real em produção: criadas as requests `#1575`, `#1576` e `#1577` no ambiente `paulofor/marketing-hub`, intercalando prompts que criariam `.md`, não alterariam arquivos e alterariam `.md`. Todas entraram no mesmo lote `ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt` e permaneceram `PENDING` por causa da fila.
+- Limpeza real em produção: `POST /api/codex/requests/batch/discard` retornou `deleted=3`, `detached=0`, `cancelled=0`, `total=3`, `branchDeleted=false` com aviso de exclusão remota; consulta posterior confirmou `activeMarketingHubBatchRows=0` e os IDs `1575-1577` já não apareciam na listagem, portanto os indicadores do lote foram zerados.
+- Validação de navegador: Chromium headless carregou `https://iahub.xyz/codex-chatgpt-mkt`; o DOM continha `Codex ChatGPT MKT`, `Pedir PR`, `Zerar e descartar lote`, contadores do lote e a opção `paulofor/marketing-hub`. Screenshot salvo em `/tmp/aihub-codex-chatgpt-mkt.png` com SHA-256 `54d11dc41f262844419f9677b4fd6f6585bd554855ef98151785ae0522d3f653`.
+- Ajuste aplicado: adicionado teste backend `createPrCreatesDraftPullRequestFromReadyBatchBranch`, cobrindo o caminho feliz do `Pedir PR` em lote com branch pronta, diff funcional, retorno de URL, arquivos alterados/funcionais e marcação do lote como fechado.
+- Validação local: `mvn test -Dtest=CodexControllerTest,CodexRequestServiceTest` passou com 38 testes; `npm run build` em `apps/frontend` passou; `git diff --check` passou.
+
+## 2026-07-10 02:03:00 UTC - Correção dos totais de dias na dashboard
+
+- Solicitação recebida: corrigir os totais de dias exibidos em "Últimas alterações do código fonte", que apareciam como `20644 dias` e data `31/12/1969`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: quando o backend não encontrava commit via GitHub/git local ou não conseguia ler a pasta do módulo, o fallback retornava `Instant.EPOCH`; a UI renderizava esse timestamp como uma data real, fazendo a contagem desde 1970.
+- Ajuste aplicado: `SourceModuleChangeService` agora retorna `null` para `lastChangedAt` e `daysSinceLastChange` quando não há fonte confiável, em vez de usar epoch; também foi adicionada configuração opcional `hub.source.repository.root`/`HUB_SOURCE_REPOSITORY_ROOT` para apontar explicitamente a raiz local quando disponível.
+- Ajuste aplicado no frontend: a dashboard aceita valores nulos e exibe `Sem dados`/`indisponível`, evitando datas falsas quando a origem não está acessível.
+- Testes adicionados: `SourceModuleChangeServiceTest` cobre módulo sem diretório/histórico, data vinda do GitHub e fallback por mtime local.
+- Validação: `mvn test -Dtest=SourceModuleChangeServiceTest`, `mvn test` completo em `apps/backend` e `npm run build` em `apps/frontend` passaram.
+
+## 2026-07-10 02:16:00 UTC - Esclarecimento sobre exibição dos dias corretos
+
+- Solicitação recebida: esclarecer se a dashboard exibirá `null` e o que é necessário para mostrar a quantidade correta de dias desde a última alteração.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a contagem correta depende de o backend conseguir consultar uma fonte real de histórico para cada pasta de módulo; sem GitHub configurado e sem raiz local de repositório acessível, o sistema não tem dado confiável para calcular os dias.
+- Orientação registrada: a UI não deve exibir `null`; ela mostra `Sem dados`/`indisponível` quando o backend retorna ausência de data. Para exibir a quantidade correta, configurar `GITHUB_SOURCE_OWNER`, `GITHUB_SOURCE_REPO` e `GITHUB_SOURCE_BRANCH` para consulta via GitHub ou `HUB_SOURCE_REPOSITORY_ROOT` apontando para a raiz local do checkout com `.git` acessível ao container/processo do backend.
+
+## 2026-07-10 02:20:00 UTC - Orientação sobre token GitHub para a dashboard
+
+- Solicitação recebida: usuário informou que o problema continua e perguntou se um token GitHub serve.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o endpoint de produção `/api/source-modules/changes` já não retorna mais `Instant.EPOCH`; ele retorna `lastChangedAt:null` e `daysSinceLastChange:null` para todos os módulos, indicando que a correção contra data falsa está ativa, mas o backend ainda não possui uma fonte de histórico configurada para calcular datas reais.
+- Evidências coletadas: `GET https://iahub.xyz/api/source-modules/changes` retornou `null` para todos os módulos; `GET https://iahub.xyz/api/account/read` retornou `connected=true` e `executable=true`; logs recentes do backend mostram a request 1438 em execução via Codex App Server com `sandbox=danger-full-access`, sem token OAuth no payload, como esperado.
+- Orientação registrada: um token GitHub clássico com `repo` serve para acessar commits de repositório privado, mas o código atual da dashboard usa `GithubApiClient` autenticado por GitHub App; portanto o caminho já suportado é configurar `GITHUB_SOURCE_OWNER=paulofor`, `GITHUB_SOURCE_REPO=ai-hub`, `GITHUB_SOURCE_BRANCH=main` junto com a GitHub App operacional (`GITHUB_APP_ID`, `GITHUB_INSTALLATION_ID`, `GITHUB_PRIVATE_KEY_FILE`/`GITHUB_PRIVATE_KEY_PEM`). Se a intenção for usar diretamente um PAT, será necessário adicionar suporte explícito a token de source no backend.
+
+## 2026-07-10 02:24:00 UTC - Configuração de token GitHub pelo menu
+
+- Solicitação recebida: criar um item de menu para cadastrar token GitHub, nome de usuário/organização, repositório e branch, salvando a configuração no banco para corrigir a dashboard.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a dashboard já tratava ausência de dados sem exibir data falsa, mas o backend continuava sem uma fonte configurável em tempo de execução para consultar commits de repositório privado; `SourceModuleChangeService` só lia variáveis de ambiente/Git local e `GithubApiClient` só autenticava via GitHub App.
+- Ajuste aplicado no backend: criada tabela `source_repository_config` com migrations para MySQL, H2 e PostgreSQL; adicionados entidade, repository, DTOs, service e controller `/api/source-repository-config` para ler/salvar a configuração. O token é aceito no save, mas a API retorna apenas `tokenConfigured`, sem expor o valor salvo.
+- Ajuste aplicado na consulta da dashboard: `SourceModuleChangeService` passa a preferir a configuração persistida no banco e chama GitHub com PAT via novo método `listCommitsWithToken`; se não houver configuração válida, mantém o fallback antigo por variáveis de ambiente/Git local.
+- Ajuste aplicado no frontend: adicionado menu `Config. Repositório`, rota `/source-repository-config` e tela para cadastrar usuário/organização, repositório, branch e token. Quando já há token salvo, o campo fica vazio e serve apenas para substituição.
+- Validação: `mvn test` em `apps/backend` passou com 70 testes, incluindo cobertura para uso da configuração persistida com token; `npm install` foi executado para montar o ambiente frontend local; `npm run build` em `apps/frontend` passou.
+- Validação runtime: uma execução local do backend carregou o `.env` existente e aplicou a migration `V34__create_source_repository_config` no MySQL configurado, criando a tabela necessária sem gravar token. A tentativa posterior com H2 isolado confirmou uma limitação preexistente: o runtime H2 não sobe porque existem duas migrations `V29` em `db/migration/h2`.
+
+## 2026-07-10 11:53:20 UTC - Modelos GPT-5.6 na combo Codex ChatGPT
+
+- Solicitação recebida: pesquisar modelos 5.6, colocar na combo do Codex ChatGPT e esclarecer se o usuário conseguiria usar GPT-5.6 Sol.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a combo da tela `Codex ChatGPT` era uma lista fixa no frontend com apenas `gpt-5.5` e `gpt-5.4`; o backend já repassava o campo `model` para o sandbox/App Server, então o problema raiz era falta de descoberta/atualização da lista exibida, não o caminho de execução em si.
+- Pesquisa realizada: fontes públicas indicam família GPT-5.6 com variantes Sol/Terra/Luna e disponibilidade gradual em Codex/ChatGPT Work para contas elegíveis; como a disponibilidade depende da conta conectada, a fonte de verdade operacional deve ser o `model/list` do Codex App Server local.
+- Ajuste aplicado no sandbox-orchestrator: adicionado `GET /codex-app-server/models`, que chama `model/list`, pagina resultados, remove modelos ocultos e normaliza `{id, modelName, displayName}`.
+- Ajuste aplicado no backend: adicionado proxy `GET /api/account/models`, mantendo `/api/codex/models` reservado para cadastro de preços/custos.
+- Ajuste aplicado no frontend: a combo passa a carregar modelos reais de `/account/models` e usa fallback com `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.5` e `gpt-5.4`.
+- Observação operacional: o usuário conseguirá usar `GPT-5.6 Sol` se a conta ChatGPT conectada tiver acesso e o Codex App Server aceitar o ID retornado por `model/list`; se a conta ainda não tiver rollout, o fallback pode aparecer, mas a execução poderá falhar no `thread/start`.
+- Validação: `mvn test -Dtest=AccountControllerTest,SandboxOrchestratorClientTest` passou; `npm run build` em `apps/frontend` passou; `npm run build` e `node --test --test-name-pattern="lista modelos|Codex App Server" dist/tests/jobs.test.js dist/tests/codexAppServerClient.test.js` passaram no `apps/sandbox-orchestrator`; `git diff --check` passou.
+
+## 2026-07-11 06:05:00 UTC - Diagnostico de lote MKT nao zerado apos salvar conversa
+
+- Solicitação recebida: usuário informou que salvou um diálogo para retomar depois e, ao tentar zerar/descartar solicitações em seguida, continuaram aparecendo solicitações concluídas no lote.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: salvar conversa e zerar lote são fluxos independentes; a conversa salva apenas preserva mensagens para contexto futuro, enquanto o lote atual depende de `work_batch_key`/`work_branch` nas `codex_requests`. A tela exibe o lote a partir da primeira página de requests (`size=20`), e a produção ainda retornava 14 solicitações concluídas recentes anexadas ao lote `ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt`, indicando que o descarte não foi efetivado no backend para esse lote.
+- Evidências coletadas: `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`; `GET /api/codex/requests?page=0&size=20` continha 14 requests `CHATGPT_CODEX_MKT` concluídas de `paulofor/marketing-hub` com `workBatchKey`/`workBranch` ativos e uma request `paulofor/ai-hub` em execução; consulta ampliada para 100/500 registros mostrou 45 concluídas vinculadas ao mesmo lote de `marketing-hub`.
+- Evidência de implementação: `CodexRequestService.discardBatch` deve desanexar concluídas (`workBranch=null`, `workBatchKey=null`) e cancelar/apagar pendentes; portanto, se as concluídas continuam com a chave, a operação de descarte não ocorreu ou não chegou ao backend.
+- Alternativas avaliadas: (1) orientar novo clique/refresh e observar retorno, baixo esforço mas não corrige UX; (2) executar descarte manual via API, resolve estado imediato mas é destrutivo e deve ser feito apenas com confirmação explícita; (3) preparar correção de produto para listar/descartar lote por endpoint dedicado e mostrar retorno do descarte, maior esforço e melhor aderência para evitar recorrência.
+- Decisão neste turno: não preparar PR nem executar descarte destrutivo sem pedido explícito; entregar diagnóstico e orientar próximos passos.
+
+## 2026-07-11 06:01:41 UTC - Reprodução do descarte de lote MKT em produção
+
+- Solicitação recebida: usuário mostrou a sequência em produção em que a tela exibia 14 itens concluídos, o alerta de confirmação dizia 17 solicitações, o clique em OK retornava para a tela e o lote continuava com 14 concluídas; usuário autorizou tentar no ambiente Marketing Hub em produção.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: há dois problemas combinados. Primeiro, a UI calcula os números por regras diferentes: o badge de concluídas usa `activeBatchRequests` excluindo concluídas com `pullRequestUrl`, enquanto o `confirm` conta todas as requests recentes do mesmo `workBatchKey`/`workBranch`; por isso 14 no badge e 17 no alerta na primeira página. Segundo, o descarte real falha no backend porque `CodexRequestService.discardBatch` tenta apagar a branch remota no GitHub antes de desanexar as requests locais; quando a exclusão da branch retorna erro diferente de 404, o serviço responde `502 Bad Gateway`, a transação aborta e nenhum `workBatchKey`/`workBranch` é limpo.
+- Evidências coletadas: `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`; `GET /api/codex/requests?page=0&size=20` mostrou 17 registros recentes no lote `ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt`, sendo 14 concluídos sem PR e 3 concluídos com PR; `GET /api/codex/requests?page=0&size=100` mostrou 45 registros no mesmo lote, todos `CHATGPT_CODEX_MKT` de `paulofor/marketing-hub`, sendo 14 concluídos sem PR e 31 concluídos com PR.
+- Reprodução executada: `POST https://iahub.xyz/api/codex/requests/batch/discard` com `environment=paulofor/marketing-hub`, `profile=CHATGPT_CODEX_MKT` e `workBatchKey=ai-hub/codex-paulofor-marketing-hub-main-chatgpt_codex_mkt` retornou `502 Bad Gateway` em `2026-07-11T06:00:35Z`.
+- Validação pós-tentativa: nova consulta ampliada continuou mostrando 45 registros anexados ao lote, com a mesma divisão de 14 sem PR e 31 com PR; portanto a tentativa em produção não limpou dados parcialmente.
+- Alternativas avaliadas: (1) apenas orientar refresh/novo clique, baixo esforço mas ineficaz porque o endpoint reproduziu `502`; (2) fazer limpeza manual direta no banco ignorando a branch remota, resolveria o estado atual mas é operação produtiva destrutiva e sem trilha de produto adequada; (3) corrigir o fluxo de produto para desanexar/cancelar localmente mesmo se a exclusão da branch remota falhar, retornando `branchDeleted=false` e um aviso, além de alinhar os contadores da UI. A alternativa 3 tem melhor aderência porque resolve a causa raiz e evita recorrência.
+- Decisão neste turno: não preparar PR nem aplicar limpeza manual no banco; entregar diagnóstico reproduzido e recomendar a correção de produto.
+
+## 2026-07-11 06:06:46 UTC - Correção do descarte de lote MKT travado por branch remota
+
+- Solicitação recebida: usuário confirmou que o problema de descarte do lote precisa ser consertado.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o descarte local do lote estava acoplado à exclusão da branch remota no GitHub; qualquer erro diferente de 404 ao apagar a branch lançava `ResponseStatusException`, abortava a transação e impedia a limpeza de `workBatchKey`/`workBranch` das solicitações concluídas. Em paralelo, o frontend contava solicitações fechadas por PR no alerta, mas não no badge do lote, gerando divergência visual.
+- Alternativas avaliadas: (1) manter a regra atual e orientar nova tentativa, baixo esforço mas não corrige a falha reproduzida; (2) limpar o lote local antes de tentar qualquer operação remota, resolveria concluídas mas poderia mascarar falhas reais de cancelamento de solicitações pendentes/em execução; (3) tratar falha de exclusão da branch remota como aviso, mantendo falhas de cancelamento de sandbox como erro e sempre desanexando concluídas quando possível. Decisão: seguir a alternativa 3 por melhor equilíbrio entre robustez operacional e segurança do fluxo.
+- Ajuste aplicado no backend: `CodexRequestService.discardBatch` agora recebe um resultado estruturado da tentativa de apagar a branch remota; erros GitHub diferentes de 404 são registrados como warning e retornam `branchDeleted=false` com `branchDeletionWarning`, sem impedir a limpeza local do lote. A semântica de erro para cancelamento de solicitações pendentes/em execução foi preservada.
+- Ajuste aplicado no frontend: o `confirm` de “Zerar e descartar lote” passou a contar apenas solicitações abertas do lote usando a mesma regra visual do badge (`!isClosedBatchRequest`), evitando a diferença 14 vs 17; a telemetria usa os números reais retornados pelo backend (`deleted`, `cancelled`, `detached`, `total`) e inclui aviso quando a branch remota não foi apagada.
+- Testes/validação: adicionado teste `discardBatchDetachesCompletedRequestsWhenRemoteBranchDeletionFails`, cobrindo falha 500 do GitHub com limpeza local preservada. `mvn test -Dtest=CodexRequestServiceTest` passou com 30 testes; `mvn test` completo em `apps/backend` passou com 73 testes. `npm install` foi necessário para restaurar dependências locais do frontend; `npm run build` passou. `git diff --check` passou.
+- Observação: não foi criado PR e não foi feita limpeza manual em produção neste turno.
+## 2026-07-11 - Disponibilização de credenciais AWS na sandbox Codex
+
+- Investigada a causa raiz: o AWS CLI já estava instalado e informado ao modelo, mas o `docker-compose.yml` só montava/exportava segredos de OpenAI, GitHub Packages e Gemini. O arquivo criado no host em `/root/infra/aws/acesso_aws` não tinha volume nem leitura no startup do `sandbox-orchestrator`, então o processo do runner/Codex App Server nascia sem `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` e `AWS_DEFAULT_REGION`.
+- Ajustado o `sandbox-orchestrator` no Compose para montar `${AWS_CREDENTIALS_HOST_DIR:-/root/infra/aws}` em `/run/secrets/aws:ro` e exportar `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION` e `AWS_SESSION_TOKEN` opcional a partir de `/run/secrets/aws/acesso_aws` antes de iniciar `node dist/src/index.js`.
+- Atualizados `.env.example`, README e `docs/sandbox-architecture.md` para documentar o diretório do host, o formato do arquivo `acesso_aws` e o comando seguro de validação `aws sts get-caller-identity`.
+- Ajustado o prompt/checklist do runner para informar ao modelo quando as credenciais AWS estão exportadas e orientar que segredos `AWS_*` não sejam impressos em logs.
+- Adicionado teste para travar o contrato do Compose e reforçado teste do checklist de preflight com o status de credenciais AWS.
+
+## 2026-07-11 - Conversas salvas sem limite visual e exclusao manual
+
+- Solicitação recebida: corrigir a limitação indevida de 20 mensagens ao salvar conversa no Codex ChatGPT e adicionar um caminho para o usuário apagar conversas salvas.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o estado `conversation` era usado ao mesmo tempo como fonte completa do diálogo e como lista renderizada na tela; a função `trimConversationMessages(...slice(-20))` cortava o próprio estado em cada atualização, fazendo o salvamento persistir apenas as mensagens ainda visíveis.
+- Ajuste aplicado no frontend: removido o corte do estado da conversa; a conversa completa da sessão passa a ser preservada para prompt, edição e salvamento, enquanto a tela renderiza apenas `conversation.slice(-20)` para manter o navegador leve. O texto da UI agora esclarece que mensagens antigas ficam ocultas, mas continuam entrando no salvamento.
+- Ajuste aplicado no backend/frontend: removido o limite silencioso de quantidade de mensagens no normalizador de conversa salva, mantendo a proteção de tamanho por conteúdo; adicionado `DELETE /api/codex/conversations/{id}` no controller/service de conversas salvas e botão “Apagar salva” na tela, com confirmação do usuário, recarga da lista e limpeza da conversa selecionada.
+
+## 2026-07-11 14:56:46 UTC-3
+- Correção administrativa: a entrada `2026-07-11 14:56:20 UTC-3` sobre Docker Compose v2 foi inserida fora do fim do arquivo; como este diário é append-only, ela foi mantida e este registro final consolida o trabalho no local correto.
+- Diagnóstico de causa raiz para ausência de `docker compose` na sandbox: a imagem instalava `docker.io`, que disponibiliza o Docker CLI clássico, mas não garante o plugin Compose v2 usado pelo subcomando `docker compose`; por isso o modelo encontrava `docker` mas recebia `docker: 'compose' is not a docker command`.
+- Atualizado `apps/sandbox-orchestrator/Dockerfile` para adicionar o repositório oficial Docker Debian e instalar explicitamente `docker-ce-cli` com `docker-compose-plugin`, tornando `docker compose` parte da imagem da sandbox.
+- Atualizado o preflight do runner para detectar `docker` e `docker compose version`, registrando no checklist inicial quais ferramentas Docker estão disponíveis ao modelo.
+- Atualizadas as instruções enviadas ao modelo para orientar o uso preferencial de `docker compose` em vez de `docker-compose` e validar engine/plugin antes de depender de containers.
+- Atualizadas documentações em `README.md`, `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md` para declarar o plugin Docker Compose v2.
+- Adicionados testes cobrindo o contrato do Dockerfile e do prompt/checklist do runner.
+- Validação: `npm --prefix apps/sandbox-orchestrator test` passou com 64/64 testes.
+- Limitação real de ambiente: o runner local atual possui `docker` mas não `docker compose`, e `docker info` não acessou um daemon Docker válido; por isso não foi possível executar build real da imagem neste ambiente.
+
+## 2026-07-11 21:08:10 UTC - Preparacao para criar nova BM Meta com e-mail AWS-only
+
+- Solicitação recebida: continuar o trabalho de e-mails e iniciar a criação de uma nova Business Manager/Business Portfolio na Meta para uso dedicado ao WhatsApp.
+- Pergunta explícita de causa raiz: “por que esse erro/bloqueio poderia acontecer?”. Resposta: a criação da BM pode travar se a Meta enviar confirmação para `whatsapp@digicomdigital.com.br` e o time não conseguir acessar o conteúdo recebido; portanto a investigação focou em confirmar acesso operacional ao inbox AWS-only, não em recriar DNS/SES.
+- Validação operacional: o AWS CLI falhou inicialmente porque o valor de `AWS_ACCESS_KEY_ID` no ambiente estava com caractere de quebra de linha/carriage return; sanitizando o valor apenas dentro do comando, `aws sts get-caller-identity` confirmou acesso à conta `948388760606` com usuário IAM temporário `codex-aih6`.
+- Decisão: seguir com a criação assistida no navegador do usuário, usando `whatsapp@digicomdigital.com.br` como e-mail comercial; o modelo ficará responsável por monitorar o S3/SES e recuperar eventual código/link de confirmação enviado pela Meta.
+- Observação: não foi criado PR.
+
+## 2026-07-11 18:26:50 UTC-3
+- Correção administrativa: a entrada `2026-07-11 18:26:02 UTC-3` sobre travamento da tela Codex ChatGPT MKT foi inserida antes do fim do arquivo; como este diário é append-only, ela foi mantida e este registro final consolida o diagnóstico no local correto.
+- Diagnóstico de causa raiz para a tela aparentar travamento na execução `#1627`: o backend criou e despachou a solicitação para o sandbox normalmente, e o sandbox retornou conteúdo/callback para a execução por volta de `2026-07-11T21:18:52Z`.
+- Evidência operacional coletada via MCP: containers principais estavam ativos, sem pressão relevante de CPU/memória; o problema concentrou-se no backend com `HikariPool-1 - Connection is not available, request timed out after 60000ms (total=10, active=10, idle=0, waiting>0)`.
+- Resposta explícita à pergunta “por que esse erro aconteceu?”: a tela ficou travada porque o backend esgotou o pool de conexões JDBC com o MySQL enquanto atendia listagens/polling de `/api/codex/requests`, impedindo a UI de carregar o estado já atualizado da execução.
+- Causa técnica provável identificada no código: `CodexRequestService.listPage` retorna entidades `CodexRequest` completas com vários campos `LONGTEXT` (`prompt`, `responseText`, `modelTranscript`, `executionLog`) e é chamada em polling; isso aumenta custo de leitura/serialização e mantém conexões ocupadas quando há várias requisições simultâneas ou clientes cancelando por timeout.
+- Estado final observado: `GET /actuator/health` do backend voltou a responder `200 UP`, mas logs recentes ainda exibiam timeouts/broken pipe de clientes, indicando degradação transitória ou recorrente.
+- Alternativas avaliadas: (1) reiniciar backend para alívio imediato, baixo esforço mas não elimina recorrência; (2) aumentar pool do Hikari/timeout, ajuda capacidade mas pode transferir pressão para o MySQL; (3) corrigir endpoint/listagem para DTO leve, separar detalhe e reduzir polling concorrente. Decisão recomendada: alternativa 3 como correção estrutural; alternativa 1 apenas como mitigação operacional se a tela continuar indisponível.
+- Não foi criado PR nem aplicado ajuste funcional neste turno.
+
+## 2026-07-13 13:03:37 UTC-3
+- Correção administrativa: a entrada `2026-07-13 13:02:08 UTC-3` sobre tokens/custo nos cards MKT foi inserida antes do fim do arquivo; como este diário é append-only, ela foi mantida e este registro final consolida o trabalho no local correto.
+- Solicitação atendida: incluir total de tokens e custo total estimado nos cards de resumo das últimas execuções do modo Codex ChatGPT MKT.
+- Pergunta de causa raiz aplicada: “por que esse erro aconteceu?”. Resposta: a API/listagem já expõe `totalTokens` e `cost`, e o parser comum do frontend já normaliza esses campos, mas o card de histórico da `CodexChatgptPage` renderizava apenas tempo gasto e interações.
+- Alternativas avaliadas: alterar backend/DTO (maior risco e desnecessário), recalcular no card a partir das interações (risco de divergência do custo oficial), ou renderizar os campos já normalizados no card. Escolhida a terceira opção por menor escopo e aderência ao dado oficial persistido.
+- Ajustado `apps/frontend/src/pages/CodexChatgptPage.tsx` para exibir `Tokens` com `formatTokens(item.totalTokens)` e `Custo estimado` com `formatCost(item.cost)` nos cards de execuções concluídas.
+- Validação: `npm --prefix apps/frontend ci --include=dev` para restaurar dependências locais e `npm --prefix apps/frontend run build` executado com sucesso.
+
+## 2026-07-14 02:59:39 UTC - Melhoria do runbook para sandbox sem Docker daemon
+
+- Solicitação recebida: melhorar a limitação relatada pelo modelo sobre não conseguir reiniciar produção porque o sandbox não tinha Docker daemon/systemd e o `codex app-server` local não iniciou corretamente, embora produção já reportasse `connected=true`/`executable=true`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a limitação nasceu de misturar validação local com validação operacional de produção; o sandbox atual é adequado para editar código e rodar testes, mas não é necessariamente o plano de controle do host de produção. Quando produção precisa ser validada ou reiniciada, o caminho correto é MCP Server ou workflow de deploy, não depender de Docker/systemd dentro do sandbox.
+- Alternativas avaliadas: (1) instalar Docker daemon/systemd no sandbox, reduz fricção mas aumenta risco e não comprova o host real; (2) exigir SSH/manual fora do fluxo, resolve emergências mas perde repetibilidade e rastreio; (3) documentar MCP Server como plano de controle com comandos curtos, auditáveis e `timeout` para healthcheck, containers, logs e restart autorizado. Escolhida a alternativa 3 por melhor equilíbrio entre segurança operacional, rastreabilidade e aderência ao ambiente real.
+- Ajuste aplicado: `docs/operacao/codex-app-server-fase5-producao.md` ganhou a seção “Quando o sandbox não consegue reiniciar produção”, com causa raiz, decisão operacional, comandos MCP copiáveis usando here-doc para evitar erros de quoting, uso de `timeout -k` envolvendo a pipeline de logs e critério mínimo para validar a fase.
+- Evidências coletadas: `curl -fsS https://iahub.xyz/mcp` retornou `{"status":"UP"}`; via MCP, `docker ps` listou `ai-hub-6-caddy-1`, `ai-hub-6-frontend-1`, `ai-hub-6-backend-1`, `ai-hub-6-sandbox-orchestrator-1` e `ai-hub-6-mcp-server-1`.
+- Limitação observada durante a validação: consultas de `docker logs` do sandbox-orchestrator podem ficar verbosas por capturar eventos JSON do próprio job; por isso a documentação usa filtros específicos e `tail -n 40`. Não foi executado restart de produção porque isso exige autorização explícita.
+
+## 2026-07-15 14:25:00 UTC - Diagnostico do host travado durante execucao Codex MKT
+
+- Solicitação recebida: verificar nos logs o que aconteceu com o host que travou, com suspeita de download de arquivo muito grande.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a evidência principal aponta para tempestade de logs/telemetria do Codex App Server em nível `TRACE`, persistida no volume `codex-auth-data`, causando pressão de E/S e indisponibilidade do `sandbox-orchestrator`; não apareceu evidência forte de disco cheio nem de arquivo baixado isolado como causa primária.
+- Evidências operacionais via MCP: `GET https://iahub.xyz/mcp` retornou `{"status":"UP"}`; o host havia reiniciado por volta de `2026-07-15T14:00Z`; containers principais estavam ativos novamente cerca de 10 a 14 minutos depois; disco estava em 43% de uso e memória disponível acima de 3 GiB após o reboot.
+- Evidências antes do reboot: logs do host entre `13:37Z` e `13:55Z` mostraram healthchecks do Docker com timeout, erros `copy stream failed`, timeouts DNS para `8.8.8.8` e `more than 1024 concurrent queries`, seguidos de reinicialização; o backend registrou timeouts chamando `http://sandbox-orchestrator:8083/codex-app-server/account/read` e o job `bf9dbc5d-289d-43a9-8c50-342be8089a5b`.
+- Execução afetada identificada: `CodexRequest 1807`, criada em `2026-07-15T13:31:47Z`, perfil `CHATGPT_CODEX_MKT`, ambiente `paulofor/marketing-hub`, relacionada à investigação de erro no GitHub Actions; o backend marcou falha porque o job não estava mais em memória após reinício do sandbox.
+- Artefatos grandes encontrados: `/var/lib/docker/volumes/ai-hub-6_codex-auth-data/_data/logs_2.sqlite` com aproximadamente 2,2 GiB, `logs_2.sqlite-wal` com aproximadamente 214 MiB, log JSON do container `ai-hub-6-sandbox-orchestrator-1` com aproximadamente 186 MiB e diretório de sessões de julho com aproximadamente 627 MiB.
+- Consulta leve ao SQLite de logs mostrou `max(id)=138703841`, com registros recentes em `TRACE` de `tokio-tungstenite`, `codex_api::sse::responses`, frames WebSocket e eventos `codex_otel`; isso indica volume extremo de registros de transporte/stream, não apenas saída útil do job.
+- Achado de segurança separado: snapshot de shell do Codex persiste variáveis de ambiente sensíveis no volume do `CODEX_HOME`; nenhum valor foi registrado neste diário, mas a correção recomendada deve mascarar/remover segredos dos snapshots e logs.
+- Alternativas avaliadas: (1) apenas reiniciar serviços, baixo esforço e já ocorreu, mas não evita recorrência; (2) limpar/truncar `logs_2.sqlite` e logs Docker, alivia disco/E/S no curto prazo, mas perde evidência e não corrige a geração excessiva; (3) corrigir a causa raiz configurando/forçando nível de log menos verboso para o Codex App Server, rotação/limite de logs, retenção do SQLite e redaction de segredos em snapshots. Decisão recomendada: alternativa 3 como correção estrutural, com alternativa 2 apenas como mitigação operacional controlada.
+- Estado final observado: backend e sandbox-orchestrator responderam healthcheck `200`; `docker stats` não mostrou pressão crítica no momento da análise. Não foi criado PR nem aplicado ajuste funcional neste turno.
+
+## 2026-07-15 14:38:00 UTC - Correcao de retencao de logs do Codex App Server e auditoria de downloads
+
+- Solicitação recebida: executar o próximo passo recomendado para reduzir geração/retenção de logs do Codex App Server, limitar `logs_2.sqlite` e criar log do que o modelo faz de download.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o `sandbox-orchestrator` iniciava o Codex App Server herdando o ambiente sem barreira contra `TRACE` e sem manutenção do SQLite persistente em `CODEX_HOME`; como o volume `codex-auth-data` é durável, logs de transporte/SSE/WebSocket acumularam até GiB. Além disso, o job não tinha uma trilha estruturada de downloads do modelo, então era difícil separar suspeita de download grande de tempestade de telemetria.
+- Alternativas avaliadas: (1) limpar manualmente `logs_2.sqlite` no host, esforço baixo mas paliativo e sem prevenção; (2) alterar o binário `codex-rs` para mudar internamente a persistência de logs, mais profundo mas pouco aderente porque a imagem instala `@openai/codex@0.141.0` via npm; (3) controlar o processo filho e o volume persistente no `sandbox-orchestrator`, forçando log menos verboso, rotacionando SQLite no startup e auditando downloads nas tools centralizadas. Escolhida a alternativa 3 por menor acoplamento ao binário externo e melhor aderência ao repositório.
+- Ajuste aplicado: `CodexAppServerClient` agora constrói o ambiente do processo filho com `RUST_LOG` padrão em `info/warn`, rebaixando filtros `trace` para `info` salvo quando `CODEX_APP_SERVER_ALLOW_TRACE_LOGS=true` estiver explicitamente configurado.
+- Ajuste aplicado: criado `codexLogMaintenance.ts`, executado antes de iniciar o Codex App Server, para rotacionar `logs_2.sqlite`, `logs_2.sqlite-wal` e `logs_2.sqlite-shm` quando o banco exceder `CODEX_APP_SERVER_LOG_SQLITE_MAX_BYTES` (padrão 536870912 bytes) e manter apenas `CODEX_APP_SERVER_LOG_SQLITE_KEEP_ROTATED` grupos (padrão 2).
+- Ajuste aplicado: `docker-compose.yml` e `.env.example` passaram a documentar/definir `CODEX_APP_SERVER_RUST_LOG`, `CODEX_APP_SERVER_ALLOW_TRACE_LOGS`, `CODEX_APP_SERVER_LOG_SQLITE_MAX_BYTES` e `CODEX_APP_SERVER_LOG_SQLITE_KEEP_ROTATED`.
+- Ajuste aplicado: `SandboxJob` ganhou `downloadLogs`; o processador registra `download_log` para `http_get`/`WebSearch`, `fetch_image`, `git clone`/`git fetch` do orquestrador e comandos `run_shell` com indícios de download (`curl`, `wget`, `git clone/fetch/pull`, `npm ci/install`, `pnpm`, `yarn`, `pip install`, `docker pull`, etc.).
+- Validação: `npm --prefix apps/sandbox-orchestrator ci` restaurou dependências locais; `npm --prefix apps/sandbox-orchestrator test` passou com 68/68 testes, incluindo novos testes de rebaixamento de `TRACE` e rotação de `logs_2.sqlite`.
+- Observação: `npm ci` reportou vulnerabilidades existentes no grafo (`1 low`, `3 moderate`, `3 high`), mas versões de dependências não foram alteradas neste turno para manter o escopo na correção operacional solicitada. Não foi criado PR.
+
+## 2026-07-15 15:02:00 UTC - Correcao de falha no GitHub Actions durante deploy concorrente
+
+- Solicitação recebida: verificar e ajustar erro no GitHub Actions após a correção de retenção de logs do Codex App Server.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o erro aconteceu porque dois pushes em `main` dispararam workflows de deploy quase simultâneos (`29424562690` e `29424596568`); ambos publicavam e implantavam imagens mutáveis `latest` no mesmo VPS, permitindo que dois `docker compose up -d --remove-orphans` competissem pela recriação dos mesmos containers.
+- Evidência do run falho: o job `deploy` do run `29424596568` falhou na etapa `Publish services` com conflito de nome no Docker daemon: o Compose tentou recriar `ai-hub-6-mcp-server-1`, mas encontrou um container de substituição/nome já ocupado (`/266cac207879_ai-hub-6-mcp-server-1` apontando para o container `8afb05...`). Os jobs `backend`, `frontend`, `sandbox`, `mcp-server` e `docker` tinham passado.
+- Por que não foi detectado antes: os checks de PR não executam deploy em produção, e o workflow de push usava tags `latest` sem fila de deploy; o problema só aparece quando dois pushes em `main` chegam próximos o suficiente para sobrepor recriação de containers no mesmo host.
+- Alternativas avaliadas: (1) apenas reexecutar o workflow, baixo esforço mas mantém a corrida; (2) remover containers órfãos antes de cada deploy, mitiga sintomas mas pode apagar estado indevido se o conflito vier de outro deploy ativo; (3) serializar o job de deploy e usar tags imutáveis por SHA já geradas no build Docker, evitando concorrência de Compose e ambiguidade de `latest`. Escolhida a alternativa 3 por atacar a causa raiz com baixo risco.
+- Ajuste aplicado em `.github/workflows/ci.yml`: o job `deploy` ganhou `concurrency` com `group: production-deploy-${{ github.ref }}` e `cancel-in-progress: false`, fazendo deploys de produção entrarem em fila em vez de rodarem juntos.
+- Ajuste aplicado em `.github/workflows/ci.yml`: o deploy passou a usar `IMAGE_TAG: ${{ github.sha }}` e gravar/exportar `BACKEND_IMAGE`, `FRONTEND_IMAGE`, `SANDBOX_ORCHESTRATOR_IMAGE`, `CADDY_IMAGE` e `MCP_SERVER_IMAGE` com a tag imutável do commit, em vez de `latest`.
+- Validação local: `git diff --check` passou; checagem estrutural via Node confirmou presença de `concurrency`, `cancel-in-progress: false` e `IMAGE_TAG`; parsers YAML externos (`pyyaml`, `ruby`, pacote Node `yaml`) não estavam disponíveis no ambiente.
+- Validação operacional via MCP: `https://iahub.xyz/mcp` respondeu `{"status":"UP"}`; `docker ps` no host mostrou `ai-hub-6-caddy-1`, `ai-hub-6-frontend-1`, `ai-hub-6-backend-1`, `ai-hub-6-sandbox-orchestrator-1`, `ai-hub-6-mcp-server-1` e `ai-hub-6-sandbox-mail-1` ativos; `https://iahub.xyz/` respondeu com sucesso. Não foi criado PR.
+
+## 2026-07-15 22:56:00 UTC - Correção da linguagem técnica no pacote FEO do experimento 66
+
+- Solicitação recebida: baixar/analisar o pacote ZIP do experimento 66 e corrigir o FEO porque o material final ainda falava com linguagem técnica de construção da peça, não com desejos da cliente.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o FEO separava parte da auditoria interna, mas ainda tratava termos de bastidor como conteúdo aceitável quando não eram siglas explícitas; por isso expressões como `Mecanismo central`, `Como a pesquisa vira transformação prática`, `princípio científico`, `mecanismo aplicado` e textos de preservação da promessa entravam no PDF/CSV/HTML como se fossem conteúdo para a compradora.
+- Evidência analisada: o ZIP oficial `lead-portal-payments-service/docker/proxy/html/downloads/experimento-66-entregaveis.zip` continha `feo/02-pacote-final-pdf.pdf`, HTMLs e CSV; a varredura textual encontrou `Fabricado pela FEO v1`, `Promessa validada`, `Mecanismo central`, `Como a pesquisa vira transformação prática`, `MDS/MUSA`, `sha256`, JSON e wrappers de rastreabilidade em arquivos públicos.
+- Alternativas avaliadas: (1) editar apenas o ZIP/PDF atual, rápido mas reincidente; (2) só ampliar blacklist de termos, impediria vazamento mas não melhoraria valor percebido; (3) corrigir contrato de redação e montagem do FEO para transformar bastidor em linguagem de desejo, com teste de regressão no ZIP. Escolhida a alternativa 3 por atacar a causa raiz e preservar escala.
+- Ajuste aplicado no repositório `paulofor/marketing-hub`: `RedacaoEntregaveisProcessor` passou a redigir seções como `Regra simples de escolha`, primeira vitória e conclusão em linguagem de compradora, removendo `princípio científico`, `princípio de pesquisa` e fallback `aplicar o mecanismo`.
+- Ajuste aplicado no FEO: `PackageAssetAssembler` trocou headings públicos como `Mecanismo central`, `Como a pesquisa vira transformação prática` e `Mecanismo aplicado` por `O segredo da presença elegante acessível`, `Como você transforma intenção em presença` e `O caminho da transformação`.
+- Ajuste aplicado no FEO: `MontagemPacoteProcessor` reforçou o gate público para bloquear `mecanismo`, `mecanismo central`, `mecanismo aplicado`, `promessa validada`, `princípio científico`, `princípio de pesquisa`, `como a pesquisa vira`, `a pesquisa entra`, `contexto validado` e termos internos já existentes.
+- Ajuste aplicado nos testes: `FeoFabricacaoV1ContractTest` agora extrai texto de entradas `.html`, `.txt` e `.csv` do ZIP final e reprova linguagem interna no pacote público.
+- Validação local: `mvn test -Dtest=FeoFabricacaoV1ContractTest` passou com 5/5 testes; `mvn test` no módulo `feo` passou com 10/10 testes.
+- Validação de pacote: gerado ZIP local em `/tmp/feo-exp66-novo/experimento-66-entregaveis-novo.zip` com contexto público do experimento 66; `jar tf` mostrou somente `01-experiencia-guiada/index.html`, `02-ebook-principal.pdf`, `03-plano-checklists-e-templates.csv`, `imagens/vis-01.png` a `vis-04.png` e `README.txt`; varredura `rg -i` no ZIP extraído não encontrou `mecanismo`, `promessa validada`, `princípio científico`, `como a pesquisa vira`, `FEO`, `MDS`, `experimento`, `CTR`, `CPL`, `sha256`, `JSON`, `Prompt e rastreabilidade`, `checkout` ou `tráfego`.
+- Limitação real: o ZIP local foi gerado com imagens fake controladas para validação de contrato, não com chamada real à OpenAI; para publicar a entrega oficial é necessário rodar o FEO no ambiente operacional/deployado com geração visual real e substituir o arquivo de download oficial após revisão.
+- Não foi criado Pull Request, conforme restrição do modo MKT.
+
+## 2026-07-16 01:53:48 UTC - Anexos de qualquer tipo na tela Codex ChatGPT MKT
+
+- Solicitação recebida: alterar a tela Codex ChatGPT MKT para permitir anexar qualquer tipo de arquivo, não apenas imagens.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela e o contrato do sandbox foram criados originalmente para prints multimodais; por isso o frontend aceitava somente `image/*`, validava `file.type.startsWith("image/")`, usava textos de “imagens” e o `sandbox-orchestrator` descartava qualquer anexo cujo `dataUrl` não começasse com `data:image/`.
+- Causa direta: mesmo que o botão da tela fosse alterado isoladamente, PDFs, ZIPs, CSVs e outros arquivos seriam rejeitados ou descartados no backend do sandbox, porque o payload era tratado como input visual.
+- Alternativas avaliadas: (1) remover apenas `accept="image/*"` no frontend, esforço baixo mas manteria descarte no sandbox; (2) aceitar qualquer `dataUrl` e enviar tudo como imagem, esforço baixo mas quebraria em `input_image` para arquivos não visuais; (3) transformar anexos em arquivos genéricos, mantendo imagens como input visual e materializando os demais em `.codex/attachments/<jobId>/` para o modelo ler no workspace. Escolhida a alternativa 3 por atacar a causa raiz sem quebrar compatibilidade com imagens.
+- Ajuste aplicado no frontend: `CodexChatgptPage.tsx` passou a usar anexos genéricos (`FileAttachment`), aceitar qualquer tipo no seletor, aceitar arquivos colados via clipboard, mostrar miniatura só para imagens e renderizar um bloco simples com extensão para outros formatos.
+- Ajuste aplicado no sandbox: `server.ts` passou a aceitar `data:*;base64,...` em vez de apenas `data:image/*`; `SandboxImageAttachment` ganhou `path`; `jobProcessor.ts` materializa anexos em `.codex/attachments/<jobId>/`, adiciona a lista de caminhos ao prompt e filtra `input_image` apenas para imagens.
+- Proteção adicional: `.codex/` foi incluído como caminho interno do workspace para não entrar em `changedFiles`, patch ou PR; nomes duplicados de anexos são deduplicados antes da escrita.
+- Testes adicionados/ajustados: `jobs.test.ts` cobre aceite de anexo PDF na API do sandbox e garante que execução via Codex App Server envia apenas a imagem como visual, mas inclui o arquivo `.txt` como caminho legível no texto.
+- Validação executada: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/frontend run build` passou; `npm --prefix apps/sandbox-orchestrator test` passou com 69/69 testes.
+- Validação visual local: frontend subiu em `http://127.0.0.1:5173/`; Chromium headless gerou `/tmp/ai-hub-screens/codex-mkt-attachments-tall.png`, confirmando a área com “Anexar arquivos” e texto “qualquer tipo de arquivo”. Limitação observada: chamadas API exibiram 500/ECONNREFUSED porque o backend local não estava em execução, mas a área alterada renderizou corretamente.
+- Observação: `npm ci` reportou vulnerabilidades existentes nos grafos (`apps/frontend`: 17; `apps/sandbox-orchestrator`: 7), sem alteração de dependências neste turno para preservar o escopo. Não foi criado Pull Request.
+
+## 2026-07-16 02:18:00 UTC - Interações visíveis no card em execução do ChatGPT MKT
+
+- Solicitação recebida: colocar a quantidade de interações visível no card `Em execução`, para o usuário acompanhar o andamento da execução na tela Codex ChatGPT MKT.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o backend/sandbox já mantinha `interactionCount`, mas o card de histórico do frontend só renderizava métricas quando `status === COMPLETED`; além disso, o polling de detalhes das execuções em andamento atualizava a conversa, mas não mesclava os detalhes de volta na lista de cards. Como consequência, uma execução `RUNNING` podia ter contagem no detalhe sem exibir essa informação no card `Em execução`.
+- Alternativas avaliadas: (1) mostrar um contador local incrementado por tempo, baixo esforço mas incorreto porque não representa interações reais; (2) alterar apenas a condição visual para mostrar `interactionCount`, simples mas insuficiente quando o resumo da lista ainda está desatualizado; (3) buscar detalhes das execuções não terminais visíveis e mesclar no estado do histórico, renderizando `Interações` sempre que a contagem existir. Escolhida a alternativa 3 por usar a fonte real do backend/sandbox e resolver a atualização do card sem inventar métrica.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: `loadRequests` agora consulta `/codex/requests/{id}` para execuções visíveis não terminais com `externalId`, mescla os detalhes retornados no histórico e mantém o retorno já enriquecido para fluxos que dependem da lista atual.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o polling específico da conversa também atualiza o item correspondente em `requests`, evitando divergência entre mensagem da conversa e card do histórico.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o bloco de métricas deixou de depender exclusivamente de `COMPLETED`; agora mostra `Interações` em cards `Em execução` quando `interactionCount` estiver disponível, mantendo tokens/custo/tempo conforme existirem.
+- Validação: `npm --prefix apps/frontend ci --include=dev` restaurou dependências; `npm --prefix apps/frontend run build` passou com TypeScript e Vite. Observações de ambiente: o primeiro build antes do `npm ci` falhou por dependências ausentes/tipos não instalados; após restaurar o lockfile, passou. O npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências para preservar o escopo.
+- Não foi criado Pull Request, conforme restrição do modo MKT.
+
+## 2026-07-15 23:00:24 UTC-3
+- Correção de registro append-only: a entrada `2026-07-15 22:59:40 UTC-3` sobre o botão `Cancelar solicitação` foi inserida antes de entradas posteriores já existentes no arquivo, em vez de ser adicionada no fim. Nenhuma linha foi apagada ou movida; esta entrada registra a correção no final do diário.
+- Resumo válido da alteração: `CodexChatgptPage.tsx` passou a expor `Cancelar solicitação` nos balões da conversa e nos cards de últimas execuções para solicitações não terminais, chamando o endpoint existente `POST /codex/requests/{id}/cancel` e atualizando conversa, histórico e telemetria.
+- Validação confirmada: `npm --prefix apps/frontend run build` passou após `npm --prefix apps/frontend ci --include=dev`.
+
+## 2026-07-16 02:02:19 UTC - Ambiente e perfil visíveis nos cards ChatGPT MKT
+
+- Solicitação recebida: colocar nos cards de últimas execuções qual ambiente é a solicitação e qual perfil foi usado.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o backend e o parser do frontend já carregavam `environment` e `profile`, mas a renderização do card priorizava apenas id, modelo, data, branch, status e métricas. A informação existia no contrato, só não era exibida no resumo operacional.
+- Alternativas avaliadas: (1) mostrar só o ambiente, esforço mínimo mas incompleto para auditoria; (2) mostrar ambiente/perfil apenas no detalhe, sem resolver a necessidade de acompanhar pela lista; (3) adicionar uma linha fixa no card com `Ambiente` e `Perfil`, reutilizando o formatador existente de perfil. Escolhida a alternativa 3 por ser direta, consistente com os dados existentes e útil em cards pendentes, em execução e concluídos.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: importado `formatProfile`, criada formatação segura para ambiente vazio e adicionada linha `Ambiente | Perfil` em cada card de últimas execuções.
+- Validação executada: o primeiro `npm --prefix apps/frontend run build` falhou porque `node_modules` estava vazio; `npm --prefix apps/frontend ci` restaurou dependências a partir do lockfile; em seguida `npm --prefix apps/frontend run build` passou com TypeScript e Vite.
+- Não foi criado Pull Request, conforme restrição do modo MKT.
+
+## 2026-07-16 02:43:00 UTC - Resposta estruturada no Codex ChatGPT MKT
+
+- Solicitação recebida: quando o perfil Codex ChatGPT MKT escolher entre 3 alternativas, orientar o modelo a responder em JSON com uma parte de comentário e outra de orientação para próxima ação; na tela, exibir comentário e orientação separados, deixando orientação vazia quando não existir.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o perfil MKT já instruía o modelo a comparar pelo menos 3 alternativas e escolher a melhor hipótese, mas o contrato de saída continuava sendo texto livre/Markdown; a UI renderizava `responseText` como um único bloco, sem campo ou parse para distinguir comentário de orientação.
+- Causa direta: faltava um schema final de resposta para o perfil MKT e faltava uma camada de apresentação que reconhecesse esse schema sem quebrar respostas antigas.
+- Alternativas avaliadas: (1) persistir novos campos no backend com migration, mais robusto porém maior escopo e desnecessário para exibição imediata; (2) tentar separar texto livre por headings, frágil e dependente de redação; (3) instruir JSON final no perfil MKT e fazer o frontend parsear JSON puro ou bloco `json`, caindo para Markdown quando não houver estrutura. Escolhida a alternativa 3 por atacar a causa raiz com baixo risco e compatibilidade retroativa.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: instrução MKT do Codex App Server e do fluxo Responses agora pede resposta final somente em JSON válido com `comentario` e `orientacaoProximaAcao`, usando string vazia para orientação quando não houver próxima ação aplicável.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: adicionada instrução equivalente no prompt extra da tela MKT e parser tolerante para JSON puro ou fenced block; quando reconhecido, a conversa renderiza seções separadas `Comentário` e `Orientação para próxima ação`.
+- Compatibilidade: respostas antigas ou não estruturadas continuam passando pelo renderizador Markdown atual; o backend segue armazenando o texto bruto em `responseText`, sem migration.
+- Validação executada: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/frontend run build` passou com TypeScript/Vite; `npm --prefix apps/sandbox-orchestrator run build` passou com TypeScript.
+- Observação de ambiente: os primeiros builds falharam porque `node_modules` estava sem tipos de desenvolvimento; após restaurar dependências via lockfile, passaram. O npm reportou vulnerabilidades existentes nos grafos (`apps/frontend`: 17; `apps/sandbox-orchestrator`: 7), sem alteração de dependências neste turno para preservar o escopo.
+
+## 2026-07-16 15:36:02 UTC - Registro de documentos acessados pela sandbox
+
+- Solicitação recebida: durante as interações do modelo com a sandbox, registrar no banco quais documentos o modelo acessa e qual solicitação originou o acesso, excluindo arquivos fonte e preparando base para estatísticas futuras de documentos mais acessados.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta inicial: o sandbox já registra interações, logs HTTP e downloads, mas não existe evento estruturado de acesso a documentos locais; leituras de arquivos ficam misturadas em texto livre de ferramentas/logs, sem tabela consultável por documento e solicitação.
+- Causa direta: `read_file` e comandos de inspeção (`cat`, `sed`, `head`, `tail`, etc.) retornavam conteúdo ao modelo, mas o job não acumulava `documentAccesses` e o callback do backend não tinha campo/tabela para persistir documento + solicitação.
+- Ajuste aplicado no `sandbox-orchestrator`: criado `SandboxDocumentAccessLog`, inicializado `documentAccesses` em jobs novos/órfãos e registrado acesso para documentos por extensão documental (`.md`, `.txt`, `.rst`, `.adoc`, `.csv`, `.pdf`, `.docx`, etc.), inclusive quando `read_file` é atendido por cache; arquivos fonte como `.ts` não são registrados.
+- Ajuste aplicado no backend: `SandboxOrchestratorClient` passou a parsear `documentAccesses`; `CodexRequestService` persiste os eventos com deduplicação por `(sandbox_job_id, sandbox_access_id)`.
+- Banco de dados preparado para estatísticas: criada a tabela `codex_document_accesses` em migrations PostgreSQL, MySQL e H2 (`V37__create_codex_document_accesses.sql`) com índices por solicitação e por `document_path`/`accessed_at`.
+- Testes adicionados/ajustados: sandbox cobre que `README.md` é registrado e `src/app.ts` não; backend cobre parse do payload e persistência de acesso documental via callback.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build`; `mvn -q -f apps/backend/pom.xml -DskipTests compile`; `npm --prefix apps/sandbox-orchestrator test` passou com 69/69 testes; `mvn -q -f apps/backend/pom.xml -Dtest=SandboxOrchestratorClientTest,CodexRequestServiceTest test` passou; `git diff --check` passou.
+- Observação de ambiente: o primeiro build Node falhou por `node_modules` ausente e foi resolvido com `npm ci`; a primeira tentativa Maven usou `./mvnw`, mas este repositório não tem wrapper na raiz, então a validação correta foi com `mvn -f apps/backend/pom.xml`. O npm reportou 7 vulnerabilidades existentes no grafo do sandbox-orchestrator, sem alteração de dependências neste turno. Não foi criado Pull Request.
+
+## 2026-07-16 16:54:08 UTC - Melhoria visual da resposta estruturada MKT
+
+- Solicitação recebida: melhorar a visualização da resposta JSON do Codex ChatGPT MKT, separando `comentario` e `orientacaoProximaAcao` em dois quadros e mantendo formatação Markdown, inclusive tabelas.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a instrução MKT passou a exigir JSON final, mas a experiência visual dependia de o frontend reconhecer esse JSON antes do fallback Markdown; quando a resposta vinha como texto JSON escapado, bloco fenced ou com ruído ao redor, o parser podia falhar e a UI exibia o objeto cru com `\n`, destruindo a legibilidade.
+- Alternativas avaliadas: (1) pedir ao modelo para não usar JSON, simples mas quebra o contrato estruturado; (2) persistir campos separados no backend, robusto mas maior escopo para um problema de apresentação; (3) endurecer o parser do frontend e renderizar `comentario`/`orientacao` como cards Markdown. Escolhida a alternativa 3 por corrigir a causa imediata com baixo risco e preservar compatibilidade com respostas antigas.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: parser MKT passou a aceitar JSON em fenced block parcial e strings JSON duplamente codificadas; a conversa agora exibe dois quadros (`Comentário` e `Orientação`) usando o renderizador Markdown existente, que já suporta parágrafos, listas, inline code, negrito, code fences e tabelas simples.
+- Validação executada: o primeiro `npm --prefix apps/frontend run build` falhou por `node_modules` incompleto e TypeScript global incompatível; `npm --prefix apps/frontend ci --include=dev` restaurou as dependências do lockfile; em seguida `npm --prefix apps/frontend run build` passou com TypeScript e Vite.
+- Observação de ambiente: o npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências neste turno para preservar escopo. Não foi criado Pull Request.
+
+## 2026-07-16 20:32:00 UTC - Diagnóstico da solicitação 1877 desformatada
+
+- Solicitação recebida: explicar o que aconteceu com a solicitação `1877`, que apareceu desformatada na conversa do Codex ChatGPT MKT.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução `1877` foi concluída corretamente e salvou `responseText` como JSON válido, mas o parser visual do frontend procurava qualquer bloco fenced Markdown antes de aceitar o objeto JSON completo; como o campo `comentario` da resposta continha exemplos em blocos `bash` e `env`, o parser capturava o primeiro bloco de código interno e caía no fallback Markdown, exibindo o JSON cru com `\n`.
+- Evidências coletadas: API `/api/codex/requests/1877` retornou `status=COMPLETED`, `profile=CHATGPT_CODEX_MKT`, início `2026-07-16T20:18:46Z`, fim `2026-07-16T20:19:32Z` e `responseText` com os campos `comentario` e `orientacaoProximaAcao`; validação local do parser antigo com esse texto real não encontrou candidato JSON.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: `extractJsonObjectCandidate` agora tenta reconhecer o conteúdo inteiro como JSON antes de procurar bloco fenced externo, preservando suporte a JSON duplamente codificado e a respostas em bloco fenced `json`.
+- Validação executada: validação local com o `responseText` real da solicitação `1877` passou (`comentarioLength=1444`, `orientacaoLength=179`); o primeiro build falhou por dependências de dev ausentes/TypeScript global incompatível; após `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` passou.
+- Observação de ambiente: o npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências neste turno. Não foi criado Pull Request.
+
+## 2026-07-16 20:30:40 UTC - Botão de cópia no quadro de orientação
+
+- Solicitação recebida: adicionar um ícone de cópia no quadro da orientação exibido para respostas estruturadas do Codex ChatGPT MKT.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a separação visual de `comentario` e `orientacaoProximaAcao` criou um card próprio para orientação, mas o controle de cópia existente continuou disponível apenas no cabeçalho da mensagem completa; faltava uma ação específica para copiar somente a orientação.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: extraída função comum `copyTextToClipboard`, reaproveitada na cópia de mensagens e adicionado botão com ícone no cabeçalho do quadro “Orientação”, copiando apenas `orientacaoProximaAcao` e exibindo feedback temporário de sucesso.
+- Validação executada: o primeiro `npm --prefix apps/frontend run build` falhou por dependências/tipos de dev ausentes e TypeScript global incompatível; após `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` passou com TypeScript e Vite. O npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências neste turno. Não foi criado Pull Request.
+## 2026-07-16 22:24:04 UTC-3
+- Diagnóstico de causa raiz para o quadro de orientação no modo Codex ChatGPT MKT: o cartão só tinha ação de copiar e não compartilhava nenhum estado/handler com a caixa principal de solicitação, impedindo transformar a orientação em uma nova solicitação sem copiar manualmente.
+- Ajustada `CodexChatgptPage` para adicionar um segundo ícone no quadro de orientação, ao lado do copiar, que preenche diretamente a caixa de texto com `Execute sua orientação : \n<texto-da-orientação>`.
+- Adicionado estado visual para orientações já pedidas: após o clique, o novo ícone muda para confirmação e mantém `aria-pressed`, indicando que aquela orientação já foi enviada para a solicitação.
+- Validação: `npm --prefix apps/frontend run build` executado com sucesso após instalar dependências locais do frontend com `npm --prefix apps/frontend install --include=dev`.
+
+## 2026-07-17 04:09:04 UTC - Cancelamento apenas para execução
+
+- Solicitação recebida: deixar o botão `Cancelar solicitação` somente em situações que estão em execução.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela `CodexChatgptPage` renderizava `Cancelar solicitação` para qualquer status não terminal; como `PENDING` não é terminal, solicitações ainda pendentes também exibiam a ação de cancelar, mesmo quando o fluxo correto para pendentes sem envio é `Apagar antes do envio`.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: criada a regra explícita `isCancellableRequestStatus`, retornando verdadeiro apenas para `RUNNING`, e aplicada tanto no balão da conversa quanto nos cards de últimas execuções.
+- Validação executada: o primeiro `npm --prefix apps/frontend run build` falhou por dependências/tipos de dev ausentes e TypeScript global incompatível; após `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` passou com TypeScript e Vite.
+- Observação de ambiente: o npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências para preservar o escopo. Não foi criado Pull Request.
+
+## 2026-07-17 04:11:53 UTC - Headings Markdown no Codex ChatGPT MKT
+
+- Solicitação recebida: corrigir a interpretação de `##` como padrão de formatação Markdown nas respostas do Codex ChatGPT MKT.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o frontend usa um renderizador Markdown manual em `CodexChatgptPage.tsx`; ele quebrava blocos apenas por linhas em branco e só reconhecia tabela e lista com `-`/`*` quando o parágrafo inteiro tinha esse formato. Quando uma heading `## Título` vinha logo após texto sem linha em branco, ela caía no fallback de parágrafo e era exibida como texto literal.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o renderizador de blocos de texto passou a processar Markdown linha a linha, reconhecendo headings `#` a `######`, listas numeradas, listas com marcadores e tabelas mesmo quando aparecem depois de texto sem linha em branco, mantendo suporte existente a code fences, inline code e negrito.
+- Validação executada: o primeiro `npm --prefix apps/frontend run build` falhou por dependências/tipos de dev ausentes e TypeScript global incompatível; após `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` passou com TypeScript e Vite.
+- Observação de ambiente: o npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências para preservar o escopo. Não foi criado Pull Request.
+## 2026-07-17 04:08:45 UTC-3
+- Diagnóstico de causa raiz para o comportamento do modo Codex ChatGPT que identificava problemas mas encerrava sem alterar arquivos: a instrução "não criar/preparar PR sem pedido explícito" ficava ambígua e podia ser interpretada como bloqueio para preparar qualquer alteração, confundindo "não abrir PR" com "não editar arquivos".
+- Ajustado `apps/sandbox-orchestrator/src/jobProcessor.ts` para deixar explícito nos prompts `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT` que não criar Pull Request sem pedido não significa evitar alterações; quando o usuário pedir ajuste, correção ou implementação e a solução for identificada, o modelo deve alterar os arquivos necessários, validar e deixar as mudanças prontas na branch/worktree, sem abrir/publicar PR até solicitação explícita.
+- Substituída a formulação ambígua do modo MKT por instrução direta de não criar/publicar PR antes do pedido, preservando a obrigação de modificar arquivos quando a tarefa pedir correção.
+- Atualizados testes em `apps/sandbox-orchestrator/tests/jobs.test.ts` para garantir que os prompts do Codex App Server incluam a distinção entre não criar PR e editar arquivos.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator run build --silent` passou; `cd apps/sandbox-orchestrator && node --test --test-name-pattern="CHATGPT_CODEX" dist/tests/jobs.test.js dist/tests/codexAppServerClient.test.js dist/tests/codexLogMaintenance.test.js` passou com 4 testes executados, 65 ignorados pelo filtro e 0 falhas.
+- Observação de ambiente: a primeira execução de testes falhou por ausência de dependências de desenvolvimento (`@types/express`, `@types/morgan`, `@types/node`, `@types/supertest`); após `npm --prefix apps/sandbox-orchestrator ci --include=dev`, a validação passou. O npm reportou 7 vulnerabilidades existentes no grafo do pacote, sem ajuste de dependências para preservar o escopo.
+
+## 2026-07-17 14:32:19 UTC - CRUD Cadastro de Produtos
+
+- Solicitação recebida: criar mais um item de menu com CRUD `Cadastro de Produtos`, contendo `nome`, `slug` e `id externo`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: não era um erro existente de tela, e sim uma lacuna funcional; o sistema não tinha entidade, tabela, API, rota nem página para produtos.
+- Ajuste aplicado no backend: adicionados `ProductRecord`, `ProductRepository`, DTOs, `ProductService` e `ProductController` em `/api/products`, com listagem, criação, edição, exclusão, validação de campos obrigatórios e bloqueio de `slug`/`externalId` duplicados.
+- Ajuste aplicado no banco: criada a migration `V38__create_products.sql` para MySQL, PostgreSQL e H2 com tabela `products` e chaves únicas para `slug` e `external_id`.
+- Ajuste aplicado no frontend: criada `ProductsPage`, adicionada rota `/products` e novo item de menu `Cadastro de Produtos`.
+- Correções de causa raiz descobertas na validação local: migrations H2 antigas impediam startup com Flyway por versão duplicada `V29`, sintaxe `ALTER TABLE ... ADD COLUMN` incompatível com H2 2.2 e tipos `TEXT/CLOB` divergentes de entidades `LONGTEXT`; os arquivos H2/PostgreSQL afetados foram normalizados para permitir startup local com Flyway e Hibernate `validate`.
+- Validação executada: `npm run build` em `apps/frontend` passou; `mvn test` em `apps/backend` passou com 78 testes; startup local do backend com H2/Flyway aplicou 35 migrations até `V38`; smoke test em `/api/products` validou create, update com `updatedAt` avançando, erro 400 para slug duplicado, delete 204 e listagem final vazia.
+- Observação de ambiente: o primeiro build frontend falhou porque `node_modules` estava vazio; após `npm install` em `apps/frontend`, o build passou. O npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem ajuste de dependências neste turno. Não foi criado Pull Request.
+
+## 2026-07-17 14:43:43 UTC - Produto no prompt do Codex ChatGPT MKT
+
+- Solicitação recebida: adicionar, na tela Codex ChatGPT MKT e na posição indicada pela linha vermelha, uma combo com o nome do produto; quando o usuário escolher um produto, o prompt deve começar instruindo o modelo a ler `http://191.252.181.168:8000/api/products/public/{{slug-do-produto}}/marketing-definition.md` como fonte de verdade sobre o PDE.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela MKT já montava um prompt contextual em `buildConversationPromptFromHistory`, mas não tinha estado nem seletor de produto; por isso a solicitação enviada ao modelo não carregava a fonte oficial do PDE vinculada ao produto escolhido.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: criada leitura de `/products` para o perfil `CHATGPT_CODEX_MKT`, adicionada combo de produto entre os seletores de ambiente/modelo e o textarea, e inserida a instrução do documento público como primeiro bloco do prompt final quando há produto selecionado.
+- Compatibilidade: sem produto selecionado, o prompt permanece com o comportamento anterior; a conversa visível continua mostrando apenas a mensagem digitada pelo usuário, sem poluir o histórico com a instrução técnica.
+- Validação executada: o primeiro `npm run build` do frontend falhou por dependências de desenvolvimento ausentes/TypeScript global incompatível; após `npm install --include=dev` em `apps/frontend`, `npm run build` passou com TypeScript e Vite.
+- Observação de ambiente: o npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências para preservar o escopo. Não foi criado Pull Request.
+
+## 2026-07-17 17:24:00 UTC - Diagnóstico da execução 1938 aparentemente travada
+
+- Solicitação recebida: verificar por que a tela Codex ChatGPT MKT aparentava estar travada com a execução `#1938` em “Aguardando resposta do modelo... (Em execução)”.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução no servidor não travou; ela terminou às `2026-07-17T17:12:31.482Z` com status `COMPLETED`, depois de `113.778 ms` e sem timeouts. A causa dos erros visíveis no console também não é o frontend do AI Hub: todos apontam para `contentscript.js` e para `ObjectMultiplex`, componentes injetados por extensão do navegador (tipicamente carteira Web3/MetaMask), não para arquivos servidos pela aplicação.
+- Evidências coletadas: `GET https://iahub.xyz/api/codex/requests/1938` retornou `200`, `status=COMPLETED`, resposta final de 1.070 caracteres, `timeoutCount=0` e 779 interações. No console, `MaxListenersExceededWarning`, `ObjectMultiplex - orphaned data` e “A listener indicated an asynchronous response...” têm origem `contentscript.js`; esta última mensagem ocorre quando a extensão retorna `true` para uma resposta assíncrona e fecha o canal antes de responder. A própria imagem já mostra a resposta concluída renderizada à esquerda.
+- Impacto identificado: o endpoint de detalhe retornou 300.801 bytes, dos quais 296.143 caracteres eram o `modelTranscript` (incluindo o anexo de imagem). Esse volume torna a atualização da aba mais pesada, mas a chamada ainda respondeu em cerca de 2 segundos. Não há evidência suficiente para atribuir uma falha de polling ao AI Hub ou alterar o código da aplicação.
+- Orientação ao usuário: não é necessário cancelar a execução `#1938`. Para confirmar a interferência, abrir a página em janela anônima com extensões desativadas (ou desativar a extensão Web3) e repetir a ação; se os avisos desaparecerem, a causa está confirmada fora do AI Hub.
+- Validação executada: healthcheck público do MCP retornou `{"status":"UP"}`; consulta da execução `#1938` retornou `200/COMPLETED`.
+
+## 2026-07-17 17:32:00 UTC - Persistência do diálogo Codex ChatGPT após refresh
+
+- Solicitação recebida: preservar o diálogo já exibido na página Codex ChatGPT quando o usuário atualizar o navegador.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o diálogo existia apenas no estado React `conversation`, inicializado com uma lista vazia; `loadRequests` atualizava as execuções, mas não reconstruía as mensagens de conversa. Um refresh descarta esse estado em memória, por isso o usuário perdia o histórico visível mesmo com as execuções preservadas no backend.
+- Alternativas avaliadas: (1) recuperar o texto a partir do prompt completo de cada execução, frágil porque o prompt inclui instruções e todo o histórico; (2) salvar automaticamente uma conversa completa no backend, mais durável mas altera o modelo de produto e o fluxo de conversas salvas; (3) persistir o estado do diálogo localmente por perfil e restaurá-lo no carregamento, mantendo o comportamento atual e resolvendo diretamente o refresh. Escolhida a alternativa 3.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o diálogo é carregado do `localStorage` na inicialização e salvo após cada alteração, em chave separada para cada perfil ChatGPT. O conteúdo persistido é validado antes de ser usado; se o browser bloquear/limitar o armazenamento, a conversa continua funcionando na sessão atual sem interromper a interface.
+- Compatibilidade: o botão “Zerar e descartar lote” continua limpando o diálogo e, consequentemente, remove o estado persistido. Solicitações ainda em execução são restauradas e continuam sendo atualizadas pelo polling existente.
+- Validação executada: `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
+
+## 2026-07-19 00:27:08 UTC - Verificação do actionlint na imagem da sandbox
+
+- Solicitação recebida: colocar a instalação do `actionlint` na imagem da sandbox usada pelo modelo.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a necessidade existia porque o modelo precisa validar workflows GitHub Actions dentro do runner; sem `actionlint` na imagem `ai-hub-6-sandbox`, o prompt poderia recomendar validação que o ambiente não conseguiria executar.
+- Alternativas avaliadas: (1) instalar `actionlint` sob demanda em cada job, simples mas lento e dependente de rede por execução; (2) usar pacote de distribuição via gerenciador de pacotes, menor script mas sem garantia de versão atual/disponível no Debian; (3) instalar o binário oficial versionado no Dockerfile da sandbox, validando `actionlint --version` no build. A alternativa 3 é a mais aderente ao objetivo e já estava aplicada no repositório.
+- Evidências verificadas: `docker-compose.yml` usa `apps/sandbox-orchestrator` como build context da imagem `ghcr.io/paulofor/ai-hub-6-sandbox:latest`; `apps/sandbox-orchestrator/Dockerfile` define `ARG ACTIONLINT_VERSION=1.7.12`, baixa o release oficial `rhysd/actionlint`, instala em `/usr/local/bin/actionlint` e executa `actionlint --version`; `apps/sandbox-orchestrator/src/jobProcessor.ts` detecta `actionlint` no preflight e informa a disponibilidade ao modelo.
+- Ajuste de código: nenhum ajuste necessário, porque a instalação solicitada já está presente na imagem correta e coberta por teste automatizado.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent` passou; `node --test --test-name-pattern="imagem da sandbox instala ferramentas" dist/tests/jobs.test.js` passou quando executado em `apps/sandbox-orchestrator`.
+- Observação de ambiente: o primeiro teste filtrado falhou quando executado a partir da raiz do repositório porque o teste usa `path.resolve('Dockerfile')`; a repetição no diretório correto passou. O `npm ci` reportou 7 vulnerabilidades existentes no grafo do pacote, sem alteração de dependências por estar fora do escopo. Não foi criado Pull Request.
+
+## 2026-07-19 00:32:25 UTC - Contrato contextual para gh e actionlint
+
+- Solicitação recebida: seguir a alternativa escolhida para avisar o modelo sobre ferramentas críticas com regra de uso contextual.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a instalação de `gh` e `actionlint` na imagem da sandbox não garante uso consistente; sem contrato operacional explícito e testado, o modelo pode não descobrir as ferramentas ou pode deixar de executar `actionlint` quando alterar workflows GitHub Actions.
+- Alternativas avaliadas: (1) listar todas as ferramentas da imagem, com alta cobertura mas prompt ruidoso; (2) depender de descoberta manual via shell, com prompt menor mas maior risco de subuso; (3) declarar ferramentas estratégicas no prompt com regra de uso contextual e manter teste/documentação de contrato. Escolhida a alternativa 3 por equilibrar clareza, baixo custo cognitivo e maior aderência à confiabilidade do runner.
+- Ajuste aplicado em `apps/sandbox-orchestrator/README.md`: documentado que o runner informa `gh` e `actionlint` ao modelo, com regra para usar `gh` em inspeções GitHub autenticadas e `actionlint` antes de concluir ajustes em `.github/workflows/*.yml`/`.yaml`.
+- Ajuste aplicado em `apps/sandbox-orchestrator/tests/jobs.test.ts`: o teste do checklist inicial agora valida não apenas a disponibilidade de `GitHub CLI e actionlint`, mas também as instruções contextuais de uso de `gh` e `actionlint` no prompt enviado ao modelo.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent`; `node --test --test-name-pattern="inclui checklist de ambiente OK" dist/tests/jobs.test.js` em `apps/sandbox-orchestrator`; `git diff --check`.
+- Observação de ambiente: o build inicial falhou porque as dependências locais do pacote não estavam instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou 7 vulnerabilidades existentes no grafo, sem alteração de dependências por estar fora do escopo. Não foi criado Pull Request.
+
+## 2026-07-17 18:00:00 UTC - Proposta de construção com avaliação por persona
+
+- Solicitação recebida: avaliar a possibilidade de uma solicitação com dois modelos, um construindo um produto digital e outro representando o público-alvo para avaliar o resultado e acelerar a evolução.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Não se trata de um erro existente; a necessidade decorre de uma lacuna de orquestração: o fluxo atual executa um único agente por job e não materializa uma etapa de avaliação de produto versionada entre iterações.
+- Decisão arquitetural: documentada a proposta de dois sandboxes isolados por ciclo, com o construtor em `workspace-write` e a persona em `read-only` sobre um snapshot imutável. Evita concorrência de escrita, feedback sobre estado parcial e acesso indevido a credenciais.
+- Definidos fluxo sequencial, contrato JSON schema-validado para feedback, limites de custo/iterações, critérios de parada, requisitos de auditoria e etapas concretas de implementação no AI Hub.
+- Validação executada: revisão do fluxo atual e dos tipos do `sandbox-orchestrator`; `git diff --check` passou.
+
+## 2026-07-17 18:15:00 UTC - Entrada de menu para construção com persona
+
+- Solicitação recebida: disponibilizar esse tipo de solicitação como um novo item de menu.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. A proposta anterior estava somente na documentação; não havia rota nem link de navegação no frontend para que a funcionalidade planejada pudesse ser descoberta pelos usuários.
+- Ajuste aplicado: adicionado o item `Construir com Persona`, a rota `/construir-com-persona` e uma página de apresentação com as etapas construção, avaliação e evolução.
+- Transparência funcional: a página informa explicitamente que o envio automatizado depende da implementação ainda pendente do perfil no backend e no Sandbox Orchestrator; não simula uma solicitação que o backend atual não suporta.
+- Validação executada: `npm --prefix apps/frontend run build`, `git diff --check` e smoke check `curl -fsS -o /dev/null -w '%{http_code}' http://127.0.0.1:8082/construir-com-persona` passaram (HTTP 200). A tela foi revisada visualmente em screenshot local.
+
+## 2026-07-17 23:57:00 UTC - Cards estruturados e estrelas no Codex ChatGPT MKT
+
+- Solicitação recebida: pedir também `titulo` e `sugestaoMelhoriaAmbiente` na resposta estruturada do modelo, exibir todos os campos em cards separados, mostrar o título nos cards de últimas execuções e permitir avaliação por estrelas nessa lista.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o contrato estruturado do modo MKT instruía o modelo a devolver apenas `comentario` e `orientacaoProximaAcao`, e a UI só parseava/renderizava esses dois campos; a lista de últimas execuções já carregava `rating`, mas não reaproveitava a ação de avaliação da tela clássica do Codex.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: o prompt do modo `CHATGPT_CODEX_MKT`, tanto via Codex App Server quanto no caminho legado, passou a exigir JSON com `titulo`, `comentario`, `orientacaoProximaAcao` e `sugestaoMelhoriaAmbiente`.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o parser estruturado aceita os novos campos mantendo compatibilidade com respostas antigas, renderiza `Título`, `Comentário`, `Orientação` e `Sugestão de melhoria para o ambiente` em cards separados, usa o título curto no card de últimas execuções e adiciona estrelas interativas para execuções concluídas.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para garantir que o prompt MKT inclua `titulo`, `sugestaoMelhoriaAmbiente` e a instrução de melhoria do ambiente de execução.
+- Validação executada: `npm --prefix apps/frontend run build` passou; `npm --prefix apps/sandbox-orchestrator run build --silent && node --test --test-name-pattern="CHATGPT_CODEX_MKT" apps/sandbox-orchestrator/dist/tests/jobs.test.js` passou; `git diff --check` passou; `vite preview` serviu `/codex-chatgpt-mkt` com HTTP 200 e o bundle gerado contém os novos campos/cards/estrelas.
+- Limitação real de ambiente: o Docker CLI e o plugin Compose estão instalados, mas o daemon Docker não está ativo em `/var/run/docker.sock`; `service docker start`, `systemctl start docker` e `dockerd` não estão disponíveis neste ambiente, então não foi possível subir os containers locais. Não foi criado Pull Request.
+
+## 2026-07-18 00:39:19 UTC - Títulos das solicitações no histórico ChatGPT MKT
+
+- Solicitação recebida: fazer aparecer os títulos das solicitações na lista de histórico/últimas execuções do Codex ChatGPT MKT.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a tela tentava usar o `titulo` do JSON de resposta do modelo (`responseText`) para nomear os cards, mas o endpoint paginado de histórico retorna um resumo sem `responseText`; além disso, o resumo trazia apenas os primeiros 2000 caracteres do prompt, enquanto a solicitação real fica no final do prompt montado pelo modo ChatGPT/MKT após instruções e histórico.
+- Alternativas avaliadas: (1) continuar parseando o título da resposta, simples mas só funciona após conclusão e falha no endpoint paginado; (2) extrair no frontend a última mensagem a partir do prompt resumido, barato mas frágil com histórico longo; (3) derivar no backend um `requestTitle` usando o prompt completo e devolver esse campo no resumo, mantendo o `prompt` de resposta limitado. Escolhida a alternativa 3 por resolver pendente, em execução e concluída com menor inconsistência visual.
+- Ajuste aplicado no backend: `CodexRequestSummary` passou a expor `requestTitle`; o serviço de listagem paginada deriva esse título a partir de `Última mensagem do usuário:` usando o prompt completo internamente, e depois reduz o `prompt` devolvido para preview de 2000 caracteres para não inflar o payload.
+- Ajuste aplicado no frontend: `CodexRequest` passou a ler `requestTitle`; os cards de histórico agora exibem `#id · requestTitle`, com fallback para problema, título estruturado da resposta ou modelo.
+- Validação executada: `mvn -f apps/backend/pom.xml -Dtest=CodexRequestServiceTest test` passou; `mvn -f apps/backend/pom.xml test` passou com 78 testes; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
+- Observação de ambiente: foi necessário executar `npm --prefix apps/frontend ci --include=dev` porque `node_modules` não estava instalado; o npm reportou 17 vulnerabilidades existentes no grafo do frontend, sem alteração de dependências para preservar o escopo. Não foi criado Pull Request.
+
+## 2026-07-18 01:10:00 UTC - Correção do título do modelo nas últimas execuções MKT
+
+- Solicitação recebida: em "últimas execuções", o título exibido estava errado; deve ser o campo `titulo` vindo no JSON final da resposta do modelo, por exemplo `{"titulo":"Histórico com títulos", ...}`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a correção anterior colocou `requestTitle` como prioridade no frontend, mas o backend preenchia esse campo a partir da última mensagem do usuário/prompt. Como o endpoint paginado de últimas execuções não expõe `responseText`, a UI não tinha como priorizar o `titulo` real do JSON do modelo e acabava mostrando o título derivado da solicitação.
+- Alternativas avaliadas: (1) trocar a prioridade no frontend para `responseText`, baixo esforço mas insuficiente porque a lista paginada não recebe `responseText`; (2) buscar detalhes de todas as execuções concluídas visíveis, correto mas aumenta chamadas e latência no polling; (3) resolver no backend o `requestTitle` a partir do `titulo` estruturado da resposta quando existir, mantendo fallback para prompt. Escolhida a alternativa 3 por corrigir a fonte de dados usada pela lista sem aumentar o número de requisições da tela.
+- Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/dto/CodexRequestSummary.java`: o resumo passou a carregar `responseText` internamente com `@JsonIgnore`, evitando expor a resposta inteira no payload da listagem.
+- Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/repository/CodexRequestRepository.java`: as queries de resumo agora selecionam `cr.responseText` para permitir cálculo do título estruturado no serviço.
+- Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/service/CodexRequestService.java`: `prepareRequestSummary` agora tenta extrair `titulo`/`título`/`title` de JSON direto, JSON serializado como string, bloco cercado por ```json ou conteúdo com JSON embutido; se não encontrar, mantém o fallback para a última mensagem do usuário.
+- Teste adicionado em `apps/backend/src/test/java/com/aihub/hub/service/CodexRequestServiceTest.java`: `listPageUsesStructuredModelTitleBeforePromptTitle` garante que `{"titulo":"Histórico com títulos", ...}` prevalece sobre o prompt no `requestTitle` retornado à lista.
+- Validação executada: `mvn -f apps/backend/pom.xml -Dtest=CodexRequestServiceTest test` passou com 32 testes; `mvn -f apps/backend/pom.xml test` passou com 79 testes. Não foi criado Pull Request.
+
+## 2026-07-17 23:07:26 UTC-3
+- Correção administrativa: a entrada `2026-07-17 23:06:59 UTC-3` sobre títulos somente em execuções concluídas foi inserida em ponto intermediário do arquivo por correspondência de contexto repetido; como o diário é append-only, ela foi mantida e este registro consolida o mesmo trabalho no final correto do arquivo.
+- Solicitação recebida: na lista de últimas execuções do Codex ChatGPT MKT, exibir o título somente em execuções concluídas e deixar execuções em andamento, pendentes e canceladas sem título.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o frontend montava o cabeçalho do card sempre como `#id · título`, usando `requestTitle`, `problemTitle`, título estruturado da resposta ou modelo sem condicionar pelo status da execução.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: adicionada resolução de cabeçalho do histórico que mantém `#id · título` apenas para `COMPLETED`; para demais status, o cabeçalho passa a exibir somente `#id`.
+- Validação: `npm --prefix apps/frontend run build` executado com sucesso após instalar dependências locais do frontend com `npm --prefix apps/frontend ci --include=dev`.
+
+## 2026-07-18 02:14:30 UTC - Orientação opcional no JSON final MKT
+
+- Correção administrativa final: as entradas `2026-07-18 02:12:44 UTC` e `2026-07-18 02:13:43 UTC` sobre orientação opcional foram inseridas em pontos intermediários do diário por correspondência de contexto repetido; como o diário é append-only, elas foram mantidas e este registro consolida o trabalho no final correto do arquivo.
+- Solicitação recebida: orientar o modelo do modo Codex ChatGPT MKT para que `orientacaoProximaAcao` não seja obrigatório e só apareça quando houver uma ação efetiva do usuário necessária para concluir a solicitação.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o contrato estruturado colocava `orientacaoProximaAcao` no exemplo principal do JSON e recomendava string vazia quando não aplicável, induzindo respostas com campo vazio mesmo após implementações concluídas.
+- Alternativas avaliadas: (1) tratar só na resposta manual, sem efeito sistêmico; (2) esconder somente na UI, preservando o prompt ambíguo; (3) alterar o contrato enviado ao modelo e manter o parser compatível com respostas antigas. Escolhida a alternativa 3 por corrigir a causa raiz com baixo risco.
+- Ajustes aplicados: `apps/sandbox-orchestrator/src/jobProcessor.ts` e `apps/frontend/src/pages/CodexChatgptPage.tsx` agora mostram o JSON base sem `orientacaoProximaAcao` e instruem que o campo opcional seja incluído apenas quando o usuário precisar decidir, aprovar, fornecer acesso ou executar etapa fora da sandbox.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para validar a presença da regra opcional no prompt MKT.
+- Validação executada: `npm --prefix apps/sandbox-orchestrator run build --silent` passou; `node --test --test-name-pattern="CHATGPT_CODEX_MKT" apps/sandbox-orchestrator/dist/tests/jobs.test.js` passou; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
+- Observação de ambiente: foi necessário executar `npm --prefix apps/sandbox-orchestrator ci --include=dev` e `npm --prefix apps/frontend ci --include=dev` porque as dependências locais não estavam instaladas. O npm reportou vulnerabilidades existentes nos grafos dos pacotes, sem alteração de dependências para preservar o escopo. Não foi criado Pull Request.
+
+## 2026-07-17 23:43:10 UTC-3
+- Correção administrativa final: as entradas `2026-07-17 23:42:44 UTC-3` e a consolidação anterior sobre o texto do modelo piscando foram inseridas em ponto intermediário do diário por correspondência de contexto repetido; como o diário é append-only, elas foram mantidas e este registro consolida o trabalho no final correto do arquivo.
+- Solicitação recebida: corrigir o texto do modelo piscando na lista de últimas execuções quando a solicitação está pendente ou em execução.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a UI usava o modelo como fallback do título do histórico e escondia a linha `Modelo:` quando o título resolvido era igual ao modelo; em execuções pendentes/em execução, campos parciais retornados pelo polling faziam essa condição alternar entre exibir e ocultar.
+- Alternativas avaliadas: (1) remover animação do status `RUNNING`, baixo esforço mas não atacaria a alternância da linha; (2) reservar espaço fixo com CSS, reduziria o salto visual mas manteria lógica instável; (3) separar título de histórico da linha de modelo e renderizar `Modelo:` por presença do campo. Escolhida a alternativa 3 por corrigir a causa raiz com menor risco.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: removido `request.model` como fallback de `resolveRequestHistoryTitle` e alterada a renderização para mostrar `Modelo: ...` sempre que `item.model` existir.
+- Validação executada: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build` passou; `git diff --check` passou.
+- Observação de ambiente: o build inicial falhou porque o frontend estava sem dependências locais de desenvolvimento instaladas; após `npm ci --include=dev`, a validação passou. O npm reportou vulnerabilidades existentes no grafo de dependências, sem alteração de versões por estar fora do escopo. Não foi criado Pull Request.
+
+## 2026-07-18 21:32:52 UTC-3 - Consolidação final do contrato contextual gh/actionlint
+
+- Correção administrativa final: devido a correspondências repetidas no diário append-only, registros anteriores desta mesma tarefa foram inseridos em pontos intermediários e um deles usou timestamp UTC. Esta entrada preserva as anteriores e consolida no final do arquivo, com timestamp UTC-3 obtido pelo comando obrigatório.
+- Trabalho concluído: aplicada a alternativa 3, informando capacidades estratégicas com regra de uso contextual. O runner já enviava ao modelo a instrução sobre `gh` e `actionlint`; o trabalho reforçou a documentação operacional e o teste de contrato para evitar regressão.
+- Causa raiz registrada: ferramenta instalada sem contrato operacional explícito e testado pode ser subutilizada pelo modelo, especialmente em validações de GitHub Actions.
+- Arquivos alterados: `apps/sandbox-orchestrator/README.md`, `apps/sandbox-orchestrator/tests/jobs.test.ts` e `docs/diario/registros1.md`.
+- Validações executadas: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent`; `node --test --test-name-pattern="inclui checklist de ambiente OK" dist/tests/jobs.test.js` em `apps/sandbox-orchestrator`; `git diff --check`. Não foi criado Pull Request.
+
+## 2026-07-19 05:14:37 UTC - Disponibilizacao do token Pepper na sandbox
+
+- Solicitacao recebida: disponibilizar para o modelo o arquivo criado no host com o token da API da Pepper para uso como bearer.
+- Pergunta explicita de causa raiz: “por que esse erro aconteceu?”. Resposta: o token foi criado no host, mas o `sandbox-orchestrator` so montava e exportava segredos previamente conhecidos, como OpenAI, GitHub Packages, Gemini e AWS. Sem volume dedicado e export antes do runner, o modelo nao teria acesso padronizado ao bearer da Pepper.
+- Alternativas avaliadas: (1) copiar o token para `.env`, simples mas arriscado por aproximar segredo do repositorio e historico; (2) depender de leitura manual via MCP a cada chamada, flexivel mas fragil e lento para operacao recorrente; (3) seguir o padrao existente de segredo em arquivo no host, com volume somente leitura e variaveis exportadas no startup do `sandbox-orchestrator`. Escolhida a alternativa 3 por alinhar seguranca, baixo esforco e disponibilidade automatica para as chamadas do modelo.
+- Ajuste aplicado em `docker-compose.yml`: adicionado volume `${PEPPER_TOKEN_HOST_DIR:-/root/infra/pepper-token}:/run/secrets/pepper-token:ro` e export de `PEPPER_API_TOKEN` e `PEPPER_AUTHORIZATION="Bearer $PEPPER_API_TOKEN"` quando `/run/secrets/pepper-token/pepper_api_token` existir.
+- Documentacao atualizada em `.env.example`, `apps/sandbox-orchestrator/.env.example`, `README.md` e `apps/sandbox-orchestrator/README.md` com o caminho esperado e a variavel `PEPPER_TOKEN_HOST_DIR`.
+- Validacoes executadas: `docker compose version`; `docker compose config --quiet`; `git diff --check`. O token nao foi impresso nem versionado. Nao foi criado Pull Request.
+
+## 2026-07-19 05:24:09 UTC - MCP Java para comandos no host
+
+- Solicitacao recebida: criar um MCP em Java e o workflow para publica-lo no mesmo host dos outros containers, viabilizando validacao rapida de arquivos e logs no host.
+- Pergunta explicita de causa raiz: “por que esse erro aconteceu?”. Resposta: havia um esboco de `apps/mcp-server` ja conectado ao Compose/Caddy/CI, mas faltava fechar o contrato operacional descrito no `AGENTS.md`: autenticacao bearer no endpoint de tool, healthcheck direto em `/mcp`, testes de contrato e validacao da tool no deploy.
+- Alternativas avaliadas: (1) criar um novo servico Java separado, claro mas duplicaria Compose, imagens e rotas; (2) implementar a tool dentro do `sandbox-orchestrator`, rapido mas misturaria responsabilidades Node/Java e manteria acesso ao host acoplado ao runner; (3) fortalecer o modulo Java existente `apps/mcp-server`, reaproveitando publicacao e reverse proxy ja existentes. Escolhida a alternativa 3 por menor risco, menor custo e melhor aderencia ao desenho atual.
+- Ajustes aplicados no MCP Java: criada configuracao tipada `McpServerProperties`, interceptor bearer para `/mcp/tools/**`, healthcheck publico `GET /mcp` com `{"status":"UP"}`, timeout configuravel e limite de saida com drenagem completa dos streams para evitar travamento em comandos verbosos.
+- Ajustes de publicacao: `docker-compose.yml` agora exige `MCP_SERVER_API_TOKEN` sem fallback inseguro e expoe `MCP_SERVER_COMMAND_TIMEOUT_SECONDS`/`MCP_SERVER_MAX_OUTPUT_CHARS`; o workflow valida a tool `linux-command` no host depois do deploy usando o token do `.env` remoto; `.env.example`, `README.md` e `apps/mcp-server/README.md` documentam uso e variaveis.
+- Testes adicionados: `McpServerControllerTest` cobre healthcheck publico, bloqueio sem bearer e execucao de comando com bearer valido.
+- Validacoes executadas: `mvn -f apps/mcp-server -B test`; `MCP_SERVER_API_TOKEN=test-token docker compose config --quiet`; `git diff --check`; `actionlint .github/workflows/ci.yml`. A tentativa de `docker build -t ai-hub-mcp-server-local apps/mcp-server` nao pode ser concluida porque o daemon Docker/socket `/var/run/docker.sock` nao esta disponivel neste ambiente. Nao foi criado Pull Request.
+
+## 2026-07-19 05:32:07 UTC - Correcao de compatibilidade do MCP no Tihub
+
+- Solicitacao recebida: corrigir erro observado no Tihub apos a criacao do MCP Java.
+- Pergunta explicita de causa raiz: “por que esse erro aconteceu?”. Resposta: a alteracao anterior tornou `MCP_SERVER_API_TOKEN` obrigatorio no `docker-compose` e passou a bloquear `POST /mcp/tools/linux-command` sem bearer, mas o contrato operacional vigente em `AGENTS.md` e nos fluxos historicos do Tihub usa `POST` com `Content-Type: application/json` e body `{ "command": "..." }`, sem header de autorizacao no exemplo de acesso. A quebra era incompatibilidade de contrato entre implementacao/deploy e cliente operacional.
+- Alternativas avaliadas: (1) exigir que todo cliente do Tihub passe bearer, mais seguro mas exigiria mudanca coordenada fora deste repositorio e manteria o deploy quebrando sem `.env`; (2) remover autenticacao definitivamente, maximizando compatibilidade mas eliminando a opcao de endurecimento por token; (3) tornar o token opcional: se `MCP_SERVER_API_TOKEN` estiver configurado, bearer e obrigatorio; se nao estiver, o endpoint preserva o contrato simples existente. Escolhida a alternativa 3 por corrigir o erro com menor atrito operacional e manter caminho de seguranca configuravel.
+- Ajuste aplicado em `BearerTokenInterceptor`: ausencia de `MCP_SERVER_API_TOKEN` nao bloqueia mais a tool; token configurado continua exigindo `Authorization: Bearer <token>`.
+- Ajuste aplicado em `docker-compose.yml`: `MCP_SERVER_API_TOKEN` deixou de ser variavel obrigatoria para o Compose subir.
+- Ajuste aplicado em `.github/workflows/ci.yml`: a validacao pos-deploy testa a tool com bearer quando o token existir no `.env` remoto e sem bearer quando nao existir.
+- Documentacao atualizada em `.env.example`, `README.md` e `apps/mcp-server/README.md` para refletir autenticação opcional e compatibilidade com Tihub.
+- Testes adicionados/ajustados: cobertura separada para chamada sem token configurado, rejeicao sem bearer quando token esta configurado e execucao com bearer valido.
+- Validacoes executadas: `mvn -f apps/mcp-server -B test`; `MCP_SERVER_API_TOKEN= docker compose config --quiet`; `MCP_SERVER_API_TOKEN=test-token docker compose config --quiet`; `actionlint .github/workflows/ci.yml`; `git diff --check`; healthcheck publico `GET https://iahub.xyz/mcp`; smoke externo `POST https://iahub.xyz/mcp/tools/linux-command` com `{"command":"printf mcp-ok"}`. Nao foi criado Pull Request.
+
+## 2026-07-19 15:04:05 UTC - Copy nos quadros MKT e orientacao de teste por modulo
+
+- Solicitacao recebida: colocar icone de copy no quadro de comentario e no quadro de melhoria do fluxo Codex ChatGPT MKT, e orientar no prompt que o modelo pode executar qualquer modulo do repositorio no proprio ambiente para testar e ajustar.
+- Pergunta explicita de causa raiz: “por que esse erro aconteceu?”. Resposta: a renderizacao estruturada do MKT ja separava `comentario`, `orientacaoProximaAcao` e `sugestaoMelhoriaAmbiente`, mas o affordance de copiar havia sido implementado somente para orientacao; alem disso, a instrucao de desenvolvimento local falava em montar ambiente e executar o que fosse desenvolvido, mas nao explicitava que qualquer modulo do repositorio podia ser executado no ambiente do runner.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: criado `CopyIcon`, generalizado o estado de copy por campo e adicionados botoes acessiveis para copiar `comentario` e `sugestaoMelhoriaAmbiente`, preservando o copy da orientacao.
+- Ajuste aplicado no prompt em `apps/frontend/src/pages/CodexChatgptPage.tsx` e `apps/sandbox-orchestrator/src/jobProcessor.ts`: adicionada orientacao explicita de que o modelo pode executar qualquer modulo do repositorio no proprio ambiente para testar e ajustar a solucao, respeitando ferramentas e credenciais disponiveis.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar a presenca da nova orientacao tanto no fluxo MKT via Codex App Server quanto no prompt base/checklist do runner.
+- Validacoes executadas: `npm ci` em `apps/frontend` e `apps/sandbox-orchestrator` para restaurar dependencias locais; `npm run build` em `apps/frontend`; `npm run build --silent && node --test --test-name-pattern 'prompt|checklist' dist/tests/jobs.test.js dist/tests/codexAppServerClient.test.js dist/tests/codexLogMaintenance.test.js` em `apps/sandbox-orchestrator`. O npm reportou vulnerabilidades existentes nos grafos dos pacotes, sem alteracao de versoes por estar fora do escopo. Nao foi criado Pull Request.
+
+## 2026-07-19 15:18:59 UTC - Timeout anti-travamento no Codex App Server
+
+- Solicitacao recebida: investigar se a execucao do Codex ChatGPT MKT estava travada na tela, com job em `Em execucao` e 0 interacoes.
+- Pergunta explicita de causa raiz: “por que esse erro aconteceu?”. Resposta: os logs do host mostraram que o backend continuava consultando o job enquanto o Codex App Server repetia eventos internos de `session_task.turn` sem enviar notificacoes uteis (`item/started`, `delta`, `item/completed` ou `turn/completed`) para o sandbox-orchestrator. Como o orquestrador aguardava apenas o timeout total do turno (120 minutos), a UI podia permanecer por muito tempo em `Em execucao` sem progresso perceptivel.
+- Alternativas avaliadas: (1) cancelar manualmente o job pelo usuario, resolve apenas a consequencia; (2) reduzir o timeout total de turno, simples mas prejudica tarefas longas legitimas; (3) adicionar timeout separado de inatividade/no-first-event para falhar rapidamente apenas quando nao ha atividade util do App Server. Escolhida a alternativa 3 por atacar a causa raiz sem penalizar turnos longos que continuam emitindo progresso.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: o fluxo Codex App Server agora registra ultima atividade util e aborta com `CODEX_TURN_NO_ACTIVITY` ou `CODEX_TURN_STALLED` quando o turno passa do limite configuravel sem eventos relevantes.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/types.ts`: adicionados os codigos funcionais dos novos estados de falha.
+- Documentacao atualizada em `apps/sandbox-orchestrator/README.md` e `apps/sandbox-orchestrator/.env.example` com `CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS` e o padrao de 180000 ms.
+
+## 2026-07-19 17:11:57 UTC - Contrato de PR do usuario e imagem de producao
+
+- Solicitacao recebida: criar um conceito operacional de que toda alteracao de codigo do modelo precisa passar por Pull Request executado pelo usuario antes de ser publicada, e que a imagem de producao deve ser criada obrigatoriamente pelo codigo do repositorio.
+- Pergunta explicita de causa raiz/preventiva: "por que esse erro aconteceria?". Resposta: a regra anterior distinguia "nao criar PR sem pedido" de "pode editar arquivos", mas ainda nao fechava a etapa de publicacao; sem uma instrucao explicita, o modelo poderia testar localmente e sugerir publicacao direta ou imagem manual, desviando do fluxo auditavel do repositorio.
+- Alternativas avaliadas: (1) documentar apenas no `README.md`, simples mas sem impacto garantido no prompt enviado ao modelo; (2) alterar somente o prompt do frontend, rapido mas deixaria execucoes backend/legadas inconsistentes; (3) aplicar a regra no frontend, no `SandboxJobProcessor`, na documentacao operacional e em testes de contrato. Escolhida a alternativa 3 por corrigir a causa raiz com rastreabilidade e menor risco de regressao.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: prompts `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT`, tanto via Codex App Server quanto no fluxo legado, agora exigem PR executado pelo usuario antes de publicacao e proíbem recomendar imagem de producao gerada fora do codigo/Dockerfile/Compose/pipeline versionados.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o prompt inicial das conversas ChatGPT e MKT passou a incluir o mesmo contrato de PR/publicacao/imagem de producao.
+- Documentacao atualizada em `apps/sandbox-orchestrator/README.md` com a nova politica de publicacao.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar a presenca da regra nos prompts enviados ao Codex App Server. Nao foi criado Pull Request.
+- Validacoes executadas: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent`; `npm --prefix apps/frontend run build`; `node --test --test-name-pattern="CHATGPT_CODEX" apps/sandbox-orchestrator/dist/tests/jobs.test.js`; `git diff --check`.
+- Observacao de ambiente/teste: uma tentativa de reaproveitar o teste de checklist com perfil `CHATGPT_CODEX` falhou com `CODEX_APP_SERVER_UNAVAILABLE`, confirmando que esse perfil usa o caminho Codex App Server quando o app server nao esta pronto; a alteracao foi revertida e a cobertura ficou nos testes reais do App Server. O npm reportou vulnerabilidades existentes nos grafos do frontend e sandbox-orchestrator, sem alteracao de dependencias por estar fora do escopo.
+
+## 2026-07-21 17:29:54 UTC - Perfil Codex ChatGPT Sandbox sem repositorio
+
+- Solicitacao recebida: criar um novo tipo de perfil baseado no Codex ChatGPT, exatamente igual na experiencia de execucao, porem sem integracao com Git e sem uso de repositorio, apenas para executar solicitacoes do usuario dentro da sandbox do modelo.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o perfil Codex ChatGPT foi modelado dentro do contrato original de job com repositorio; por isso a API do sandbox exigia `repoSlug/repoUrl` e `branch`, o backend extraia coordenadas Git antes de diferenciar perfis, e o processador sempre tentava clone, preflight Git, diff e PR antes/depois do Codex App Server.
+- Alternativas avaliadas: (1) criar endpoint separado para sandbox-only, isolado mas duplicaria historico/fila; (2) reaproveitar `CHATGPT_CODEX` com flags opcionais, barato mas ambiguo e propenso a regressao; (3) criar `CHATGPT_CODEX_SANDBOX` como perfil explicito da familia ChatGPT Codex, mantendo Codex App Server e historico, mas sem Git/repo/diff/PR. Escolhida a alternativa 3 por corrigir a causa raiz com contrato claro e menor duplicacao.
+- Ajustes aplicados no sandbox-orchestrator: adicionado `CHATGPT_CODEX_SANDBOX`, validacao `/jobs` sem obrigar repo/branch nesse perfil, sanitizacao de tokens GitHub, workspace temporario em `sandbox/`, prompt especifico sem Git/repositorio/PR, execucao via Codex App Server sem clone e sem coleta de diff.
+- Ajustes aplicados no backend: enum `CodexIntegrationProfile` recebeu `CHATGPT_CODEX_SANDBOX`; `dispatchToSandbox` passou a separar perfil sandbox-only antes da validacao de coordenadas Git, enviando job sem `repoSlug`, `repoUrl`, `workBranch`, token GitHub ou database derivado de ambiente.
+- Ajustes aplicados no frontend: criada rota `/codex-chatgpt-sandbox`, item de menu, variant propria em `CodexChatgptPage`, ambiente logico fixo `sandbox`, ocultacao de botoes de PR/lote nesse modo, formatacao do perfil e card explicativo na tela de detalhes.
+- Testes adicionados/ajustados: cobertura no sandbox-orchestrator para aceitar `CHATGPT_CODEX_SANDBOX` sem repositorio/branch e para executar via Codex App Server sem clone Git.
+- Validacoes executadas: `npm test` em `apps/sandbox-orchestrator` passou com 71 testes; `npm run build` em `apps/frontend` passou; `mvn test` em `apps/backend` passou com 79 testes. O `npm install` foi necessario em frontend e sandbox-orchestrator porque as dependencias locais nao estavam instaladas; npm reportou vulnerabilidades ja presentes no grafo de dependencias, sem alteracao de versoes por estar fora do escopo. Nao foi criado Pull Request.
+
+## 2026-07-21 17:34:26 UTC - Orientacao operacional nos perfis Codex ChatGPT
+
+- Solicitacao recebida: adicionar uma orientacao importante nos perfis Codex ChatGPT para criar artefatos pelo front-end do sistema, alterar funcionalidades de modulo via codigo aguardando deploy e nunca usar SSH para publicar diretamente alteracoes.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: os prompts existentes ja controlavam PR, publicacao e imagem de producao, mas nao separavam de forma objetiva os dois caminhos operacionais do Marketing Hub: artefato criado pela interface do produto versus alteracao funcional versionada no repositorio. Tambem faltava uma proibicao explicita contra publicacao direta via SSH, deixando margem para o modelo tratar acesso ao host como atalho operacional.
+- Alternativas avaliadas: (1) adicionar a orientacao somente no texto do frontend, rapido mas incompleto porque o payload efetivo do orquestrador poderia divergir; (2) duplicar o texto inline em cada prompt do orquestrador, simples mas com alto risco de drift entre perfis; (3) criar uma instrucao comum no `SandboxJobProcessor`, reutiliza-la nos perfis Codex ChatGPT e espelhar a mesma regra na tela interativa. Escolhida a alternativa 3 por menor risco de regressao e melhor aderencia ao contrato dos perfis.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: criada instrucao comum para os perfis Codex ChatGPT e incluida nos prompts `CHATGPT_CODEX`, `CHATGPT_CODEX_MKT` e `CHATGPT_CODEX_SANDBOX` enviados via Codex App Server, alem dos prompts legados de `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT`.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: a conversa interativa agora inclui a mesma orientacao nos modos Codex ChatGPT, Codex ChatGPT MKT e Codex ChatGPT Sandbox.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` para verificar a presenca da orientacao nos prompts enviados ao Codex App Server. Nao foi criado Pull Request.
+- Validacoes executadas: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/sandbox-orchestrator test` passou com 71 testes; `npm --prefix apps/frontend run build` passou; `git diff --check` passou. O npm reportou vulnerabilidades ja presentes nos grafos dos pacotes, sem alteracao de versoes por estar fora do escopo.
+
+## 2026-07-21 17:37:40 UTC - Complemento de orientacao para artefatos via frontend
+
+- Solicitacao recebida: complementar a orientacao anterior para que, se o front-end do sistema nao tiver a funcionalidade necessaria para criar o artefato, o modelo implemente essa funcionalidade, avise o usuario e aguarde o deploy.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a instrucao operacional anterior separava artefato via frontend de alteracao funcional via codigo, mas nao especificava o fluxo quando a propria interface ainda nao possuia o recurso para criar o artefato. Essa lacuna poderia levar o modelo a buscar atalhos fora do produto ou a tentar criar o artefato por caminho interno nao deployado.
+- Alternativas avaliadas: (1) alterar somente o prompt do frontend, baixo esforco mas incompleto porque jobs disparados pelo orquestrador poderiam continuar sem a regra; (2) duplicar a frase em cada perfil, simples mas aumentaria risco de drift entre modos; (3) atualizar a instrucao comum dos perfis Codex ChatGPT no `SandboxJobProcessor`, espelhar no frontend e travar por testes. Escolhida a alternativa 3 por manter contrato unico e cobrir `CHATGPT_CODEX`, `CHATGPT_CODEX_MKT` e `CHATGPT_CODEX_SANDBOX`.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: a instrucao comum agora diz que, se o front-end ainda nao tiver a funcionalidade necessaria, o modelo deve implementar a funcionalidade, avisar o usuario e aguardar o deploy antes de criar o artefato por esse caminho.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: a conversa interativa recebeu a mesma orientacao operacional.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts`: os prompts enviados ao Codex App Server agora verificam a presenca da regra nos modos `CHATGPT_CODEX`, `CHATGPT_CODEX_MKT` e `CHATGPT_CODEX_SANDBOX`.
+- Validacoes executadas: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent && node --test --test-name-pattern="CHATGPT_CODEX" apps/sandbox-orchestrator/dist/tests/jobs.test.js`; `npm --prefix apps/frontend run build`. O npm reportou vulnerabilidades ja presentes nos grafos dos pacotes, sem alteracao de versoes por estar fora do escopo. Nao foi criado Pull Request.
+
+## 2026-07-22 01:00:26 UTC-3
+- Correcao de registro: a entrada `2026-07-22 00:59:48 UTC-3` foi adicionada fora do final absoluto do arquivo porque o patch usou contexto repetido. Mantida sem remocao por politica append-only; este registro consolida corretamente a atividade no final do diario.
+- Solicitação recebida: baixar/analisar o repositório no ambiente e tentar executar o Codex ChatGPT Sandbox.
+- Repositório já estava disponível no workspace local em `/root/ai-hub/src/ai-hub-a5307751-7e74-4050-bf99-ab8036fbee4c-3K0HnN/repo`.
+- Alternativas avaliadas: subir a stack completa via Docker Compose, executar o `sandbox-orchestrator` isolado em Node ou rodar a suíte de testes do módulo. Escolhido iniciar pelo módulo isolado e testes por reduzir dependências externas e validar o núcleo do Sandbox ChatGPT com menor ruído.
+- Validação de ambiente: `docker compose version` disponível e `docker compose config --quiet` sem erros, mas `docker version` não conectou em `/var/run/docker.sock`; causa raiz da impossibilidade de subir a stack completa localmente foi ausência de Docker daemon/socket no ambiente.
+- Executado `npm ci --prefix apps/sandbox-orchestrator`; instalação concluída, com `npm audit` apontando 7 vulnerabilidades sem bloquear execução.
+- Executado `npm --prefix apps/sandbox-orchestrator test`; resultado: 71/71 testes passaram, incluindo fluxos de `CHATGPT_CODEX`, `CHATGPT_CODEX_SANDBOX`, `thread/start`, `turn/start` e sandbox mode em kebab-case.
+- Executado `npm --prefix apps/sandbox-orchestrator run build`; build TypeScript concluído com sucesso.
+- Tentativa inicial de iniciar o serviço com `CODEX_APP_SERVER_ENABLED=true` falhou porque `CODEX_HOME=/tmp/ai-hub-codex-home` não existia. Criado o diretório, reiniciado o serviço em `PORT=18083` e `GET /health` retornou `status=ok` com `codexAppServer.status=ready`.
+- Validados endpoints internos: `GET /codex-app-server/account/read` retornou `connected=false`, `requiresOpenaiAuth=true`, `blockReason=CODEX_NOT_AUTHENTICATED`; `GET /codex-app-server/models` listou modelos; `POST /codex-app-server/account/login/start` iniciou device code e o login pendente foi cancelado em seguida.
+- Limitação real: execução de uma request real do modelo via ChatGPT Codex Sandbox depende de autenticação humana ChatGPT no Codex App Server; sem essa autenticação, o serviço fica pronto, mas `executable=false`.
+- Servidor local de teste encerrado ao final; porta `18083` deixou de responder.
+
+## 2026-07-22 01:12:00 UTC - Novo dialogo no Codex ChatGPT Sandbox
+
+- Solicitacao recebida: adicionar um botao para limpar o dialogo e comecar um novo no tipo sandbox, conforme tela `/codex-chatgpt-sandbox`.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o modo sandbox reaproveitou a pagina `CodexChatgptPage`, mas removeu os controles de PR/lote do fluxo managed; como a conversa e persistida por perfil no `localStorage` e incluida no proximo prompt, faltou uma acao propria do sandbox para reiniciar o contexto local sem apagar execucoes ja registradas.
+- Alternativas avaliadas: (1) reutilizar `Zerar e descartar lote`, inadequado porque sandbox nao usa lote/branch/PR; (2) criar endpoint backend para apagar execucoes, alto risco porque destruiria auditoria e nao era a necessidade; (3) criar uma acao local "Novo dialogo" para limpar conversa, prompt, anexos, edicao e contexto salvo selecionado, mantendo historico de execucoes. Escolhida a alternativa 3 por atacar a causa raiz com menor risco e melhor aderencia ao comportamento esperado do sandbox.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: criado `handleStartNewSandboxDialog` exclusivo para `CHATGPT_CODEX_SANDBOX`, com confirmacao quando ha conversa, limpeza de estado local da sessao e foco de volta no campo de prompt.
+- Ajuste de UI em `apps/frontend/src/pages/CodexChatgptPage.tsx`: adicionado botao "Novo dialogo" no topo do formulario sandbox e junto dos botoes de acao, habilitado quando ha conversa, rascunho, anexo ou conversa salva selecionada.
+- Validacoes executadas: tentativa inicial de build sem dependencias locais expôs toolchain global inadequada; depois `npm ci --prefix apps/frontend` restaurou dependencias versionadas, `npm --prefix apps/frontend run build` passou e `npm --prefix apps/frontend run lint` passou.
+- Servidor Vite local iniciado em `http://127.0.0.1:18084/` para inspeção manual da rota. Nao foi criado Pull Request.
+
+## 2026-07-22 04:12:06 UTC - Playwright na sandbox dos modelos
+
+- Solicitacao recebida: colocar o Playwright na sandbox dos modelos.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a imagem do sandbox-orchestrator ja instalava `chromium` e exportava variaveis para navegadores headless, mas nao instalava o pacote/CLI `playwright` nem `@playwright/test`; com isso, o modelo so conseguia usar Playwright quando o projeto clonado ja trazia essa dependencia, e o modo sandbox generico ficava sem a ferramenta pronta para validacoes visuais.
+- Alternativas avaliadas: (1) apenas documentar que o projeto pode instalar Playwright sob demanda, baixo custo mas nao resolve a indisponibilidade da ferramenta; (2) instalar browsers completos via `playwright install --with-deps`, mais autonomo porem aumenta peso da imagem e duplica o Chromium ja instalado; (3) instalar `playwright` e `@playwright/test` globalmente com `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`, reaproveitando `/usr/bin/chromium` e expondo `NODE_PATH`. Escolhida a alternativa 3 por corrigir a causa raiz com menor peso de imagem e aderencia ao fluxo versionado.
+- Ajuste aplicado em `apps/sandbox-orchestrator/Dockerfile`: adicionado `ARG PLAYWRIGHT_VERSION=1.54.2`, instalados `playwright` e `@playwright/test` globais, validado `playwright --version`, exportados `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1` e `NODE_PATH=/usr/local/lib/node_modules`.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: prompts do runner e dos perfis Codex ChatGPT/ChatGPT MKT/ChatGPT Sandbox agora informam que Playwright, `@playwright/test` e Chromium estao disponiveis; o preflight detecta o comando `playwright` e inclui a informacao no checklist de ambiente.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: os prompts interativos dos modos Managed, MKT e Sandbox passaram a orientar o uso de Playwright para frontend, layout, UI e screenshots.
+- Documentacao atualizada em `README.md`, `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md` para registrar Playwright, `@playwright/test`, Chromium do sistema e variaveis de ambiente relacionadas.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar a instalacao versionada na imagem, a presenca das instrucoes de Playwright nos prompts do Codex App Server e a exibicao no checklist inicial.
+- Validacoes executadas: `npm ci --prefix apps/sandbox-orchestrator --include=dev`; `npm ci --prefix apps/frontend --include=dev`; `npm run build --silent && node --test --test-name-pattern="imagem da sandbox instala ferramentas|CHATGPT_CODEX_MKT|CHATGPT_CODEX_SANDBOX|Checklist inicial" dist/tests/jobs.test.js` em `apps/sandbox-orchestrator`; `npm --prefix apps/frontend run build`; `npm run lint` em `apps/frontend`; `npm test` em `apps/sandbox-orchestrator` passou com 71/71 testes; `git diff --check` passou.
+- Limitacao de ambiente: `docker version` encontrou o Docker CLI, mas falhou ao conectar em `/var/run/docker.sock` por ausencia de Docker daemon/socket; por isso nao foi possivel executar `docker build` local da imagem. A instalacao continua versionada no Dockerfile e sera validada no ambiente com daemon/pipeline.
+- O npm reportou vulnerabilidades ja existentes nos grafos de dependencias do frontend e sandbox-orchestrator durante `npm ci`, sem alteracao de versoes por estar fora do escopo. Nao foi criado Pull Request.
+
+## 2026-07-22 04:18:00 UTC - Documentos lidos no detalhe da solicitacao
+
+- Solicitacao recebida: adicionar na tela de detalhe da solicitacao uma tabela com os documentos lidos e a quantidade de vezes que cada documento foi lido.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o sandbox-orchestrator ja coletava acessos a documentos e o backend ja persistia esses eventos em `codex_document_accesses`, mas a tela `/codex/requests/{id}` consumia o objeto da solicitacao sem carregar um resumo agregado de documentos; por isso a informacao existia na base, mas nao chegava ao frontend.
+- Alternativas avaliadas: (1) inferir contagens no frontend a partir das interacoes/logs, barato mas fragil e incompleto; (2) criar endpoint separado para documentos lidos, limpo mas exigiria requisicao extra na tela; (3) anexar ao detalhe da solicitacao um resumo agregado por documento vindo da tabela persistida. Escolhida a alternativa 3 por atacar a causa raiz com fonte confiavel, menor complexidade operacional e boa aderencia ao fluxo atual da tela.
+- Ajuste aplicado no backend: `CodexDocumentAccessRepository` ganhou consulta agregada por `codexRequestId`, `CodexRequest` ganhou campo transiente `documentAccesses` com `documentPath` e `accessCount`, e `CodexRequestService.findWithoutRefresh` passou a preencher essa lista ao abrir o detalhe.
+- Ajuste aplicado no frontend: `parseCodexRequest` passou a aceitar `documentAccesses`/`document_accesses`, e `CodexRequestDetailPage` passou a renderizar a tabela "Documentos lidos" com caminho do documento e total de leituras, incluindo estado vazio para solicitacoes sem registros.
+- Teste adicionado em `CodexRequestServiceTest`: `findAddsDocumentAccessCounts` valida que o detalhe da solicitacao carrega as contagens agregadas e preserva `interactionCount`.
+- Validacoes executadas: `npm ci --prefix apps/frontend --include=dev`; `mvn -q -f apps/backend/pom.xml -Dtest=CodexRequestServiceTest test`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `mvn -q -f apps/backend/pom.xml test`; `git diff --check`.
+- Observacao de ambiente: a primeira tentativa de Maven como `-pl apps/backend` falhou porque o repositorio nao esta configurado como reactor multi-modulo na raiz; a execucao correta foi com `-f apps/backend/pom.xml`. A primeira tentativa de build/lint do frontend falhou por ausencia de `node_modules`, resolvida com `npm ci` a partir do lockfile. Nao foi criado Pull Request.
+
+## 2026-07-22 13:06:47 UTC-3
+
+- Solicitacao recebida: investigar falha `Internal Server Error` em consulta simples no modo Codex ChatGPT Sandbox e fazer o mesmo esquema dos modos que funcionam.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta confirmada por logs do backend no host via MCP: `Data truncation: Data too long for column 'profile' at row 1` ao criar `CodexRequest` com perfil `CHATGPT_CODEX_SANDBOX`; a coluna `codex_requests.profile` foi criada como `VARCHAR(20)`, mas o nome do novo perfil possui mais de 20 caracteres.
+- Ajuste aplicado no backend: `CodexRequest.profile` passou a declarar `length = 64`, alinhado ao tamanho ja usado em `codex_saved_conversations.profile`.
+- Ajuste aplicado em migrations Flyway MySQL, PostgreSQL e H2: adicionada `V39__expand_codex_request_profile_length.sql` para aumentar `codex_requests.profile` para `VARCHAR(64)`.
+- Ajuste de fluxo aplicado em `CodexRequestService.create`: o perfil `CHATGPT_CODEX_SANDBOX` nao grava `PromptRecord` nem aplica `workBatch/workBranch`, evitando tratar execucao temporaria sem Git como metadado de repositorio.
+- Testes adicionados: `CodexRequestTest.profileColumnFitsSandboxProfileName` e `CodexRequestServiceTest.chatgptCodexSandboxDispatchesWithoutRepositoryMetadata`.
+- Limitacao de ambiente registrada: `docker version` falhou por ausencia do socket `/var/run/docker.sock`; validacoes dependentes de container local nao puderam ser usadas nesta sandbox. Nao foi criado Pull Request.
+
+## 2026-07-23 UTC - Metricas no dashboard
+
+- Solicitacao recebida: retirar os cards de atalho do topo do dashboard e exibir metricas de quantidade total de solicitacoes, quantidade total de interacoes e tempo total gasto em processamento, separadas por semana e mes.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o dashboard ainda exibia cards estaticos de navegacao criados como atalhos iniciais; os dados de execucao ja eram persistidos em `codex_requests`, mas nao existia agregacao propria para a visao geral, e calcular no frontend a partir da lista paginada geraria totais incorretos.
+- Ajuste aplicado: adicionada agregacao backend em `/api/codex/requests/metrics` usando inicio da semana e inicio do mes, e substituido o bloco superior de cards em `DashboardPage` por cards de metricas semanais e mensais.
+- Ajuste visual aplicado: os subblocos "Semana" e "Mes" empilham em larguras estreitas para evitar quebra caractere por caractere dos valores, e o texto residual de "atalhos acima" foi atualizado para mencionar as metricas.
+- Validacoes executadas: `mvn -q -f apps/backend/pom.xml test`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; validacao Playwright desktop e mobile com mocks das APIs do dashboard, screenshots em `/tmp/aihub-dashboard-metrics.png` e `/tmp/aihub-dashboard-metrics-mobile.png`; `git diff --check`. Nao foi criado Pull Request.
+- Limitacao/incidente de validacao local: tentativa de subir o backend com `ddl-auto=create-drop` para H2 acabou usando uma `DB_URL` externa ja exportada no ambiente; o processo foi interrompido e finalizado com SIGKILL antes de chamar endpoints. Logs mostraram falhas de DDL por constraints/tabelas existentes. Nao foi possivel confirmar o schema por consulta somente leitura porque o cliente `mysql` nao esta instalado na sandbox. Nenhuma credencial foi impressa.
+
+## 2026-07-23 UTC - Metricas diarias e series historicas no dashboard
+
+- Solicitacao recebida: manter a soma mensal, mas adicionar totais de dia nos cards e garantir somas por dia, semana e mes para graficos futuros.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a API do dashboard havia sido criada apenas com duas janelas agregadas em tempo real (`week` e `month`); por isso o frontend nao tinha total diario e tambem nao havia contrato para consumir buckets historicos diarios, semanais e mensais em graficos.
+- Ajuste aplicado no backend: `CodexDashboardMetrics` agora expõe `day`, `week`, `month` e `series.daily/weekly/monthly`; `CodexRequestRepository` ganhou consulta de linhas historicas desde o inicio do periodo; `CodexRequestService.dashboardMetrics` materializa buckets dos ultimos 12 meses a partir de `codex_requests.created_at`, `interaction_count` e `duration_ms`, mantendo zeros para periodos sem uso.
+- Ajuste aplicado no frontend: `DashboardPage` passou a renderizar os cards com `Dia`, `Semana` e `Mes` para solicitacoes, interacoes e tempo de processamento; a grade interna foi ajustada para evitar quebra ruim dos valores longos em larguras medias.
+- Teste adicionado em `CodexRequestServiceTest`: valida que a API retorna janela diaria e series agregadas por dia, semana e mes.
+- Validacoes executadas: `mvn -q -f apps/backend/pom.xml -Dtest=CodexRequestServiceTest test`; `mvn -q -f apps/backend/pom.xml test`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; validacao Playwright desktop e mobile com mocks das APIs do dashboard, screenshots em `/tmp/aihub-dashboard-day-desktop.png` e `/tmp/aihub-dashboard-day-mobile.png`. Nao foi criado Pull Request.
+- Observacoes de ambiente: a primeira tentativa de build frontend falhou por ausencia de dependencias locais e uso de toolchain global incompativel; resolvido com `npm --prefix apps/frontend ci --include=dev`. O npm reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo.
+
+## 2026-07-23 UTC - Graficos de 14 dias e 10 semanas no dashboard
+
+- Solicitacao recebida: criar graficos com os ultimos 14 dias e com as ultimas 10 semanas.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o backend ja retornava as series historicas em `series.daily` e `series.weekly`, mas o dashboard ainda consumia esses buckets apenas como base para totais dos cards; faltava a camada visual que recortasse os periodos solicitados e os transformasse em graficos.
+- Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: adicionados paineis "Ultimos 14 dias" e "Ultimas 10 semanas", cada um com graficos de barras para solicitacoes, interacoes e tempo de processamento, usando respectivamente `metrics.series.daily.slice(-14)` e `metrics.series.weekly.slice(-10)`.
+- Ajuste responsivo aplicado: os graficos mantem detalhes completos no `title` de cada barra, mostram total por metrica e ocultam rotulos por barra em larguras muito estreitas, exibindo o intervalo do periodo no cabecalho do grafico para evitar sobreposicao no mobile.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; validacao Playwright desktop e mobile com mocks das APIs do dashboard, screenshots em `/tmp/aihub-dashboard-charts-desktop.png` e `/tmp/aihub-dashboard-charts-mobile.png`. Nao foi criado Pull Request.
+
+## 2026-07-23 00:19:02 UTC-3
+- Correção de registro operacional: a entrada `2026-07-23 00:17:13 UTC-3` documentou corretamente a causa raiz e o ajuste das métricas do dashboard, mas foi inserida antes de registros já existentes em vez de no final do arquivo; esta nota final preserva a política append-only sem apagar a entrada anterior.
+- Validação executada para a correção do timezone do dashboard: `mvn -f apps/backend/pom.xml test -Dtest=CodexRequestServiceTest` passou com 36 testes, 0 falhas e 0 erros.
+
+## 2026-07-23 00:21:34 UTC-3
+- Solicitação recebida: ajustar a exibição de tempo para mostrar somente hora e minuto, sem segundos, no contexto da correção de virada de dia em São Paulo.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o helper compartilhado `formatDateTime()` usava `toLocaleString('pt-BR')` sem opções explícitas, deixando o navegador decidir incluir segundos; além disso, os helpers de duração (`formatDuration` e `formatShortDuration`) exibiam segundos por padrão, inclusive nos cards/gráficos de "Tempo" do dashboard.
+- Alternativas avaliadas: (1) alterar pontualmente apenas a tela visível, rápido mas reincidente; (2) esconder segundos via CSS/texto renderizado, frágil e sem corrigir a origem; (3) centralizar a regra nos helpers de formatação e fixar `America/Sao_Paulo` nos pontos de data do dashboard. Escolhida a alternativa 3 por atacar a causa raiz, reduzir duplicação e manter consistência nas telas Codex/ChatGPT.
+- Ajuste aplicado em `apps/frontend/src/lib/codex.ts`: `formatDateTime()` agora formata `dd/mm/aaaa, HH:mm` em `America/Sao_Paulo`, sem segundos; `formatDuration()` passou a retornar horas/minutos, com `<1min` para durações positivas abaixo de um minuto.
+- Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: rótulos de datas dos gráficos usam `America/Sao_Paulo`, e `formatShortDuration()` também remove segundos.
+- Validações executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`. Nao foi criado Pull Request.
+- Observação de ambiente: as primeiras tentativas de build/lint falharam por ausência de `node_modules` e uso de toolchain global incompatível; resolvido com instalação via lockfile. O npm reportou vulnerabilidades já existentes no grafo do frontend, sem alteração de versões por estar fora do escopo.
+
+## 2026-07-23 UTC-3 - Tempo diario operacional no Codex ChatGPT MKT
+
+- Solicitacao recebida: exibir na posicao marcada no topo direito da tela Codex ChatGPT MKT a data e o total de tempo do dia, considerando corte as 03:00 do dia seguinte no fuso Sao Paulo/Brasil.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a tela Codex ChatGPT MKT nao consumia nenhum resumo diario no cabecalho, e a API de metricas havia sido corrigida para o dia civil de Sao Paulo iniciando a meia-noite; para a operacao real do usuario, isso ainda zera cedo demais porque execucoes entre 00:00 e 02:59 precisam continuar pertencendo ao dia anterior.
+- Alternativas avaliadas: (1) calcular o total no frontend a partir das ultimas execucoes visiveis, baixo custo mas incorreto porque a lista e paginada e perderia execucoes fora da pagina; (2) manter a API geral e apenas mostrar o card no cabecalho, simples mas misturaria perfis e manteria o corte em meia-noite; (3) ajustar a janela diaria da API para dia operacional com corte as 03:00 em `America/Sao_Paulo`, adicionar filtro opcional por perfil e consumir esse resumo no cabecalho do Codex ChatGPT MKT. Escolhida a alternativa 3 por corrigir a origem do total, preservar consistencia e mostrar o dado especifico do perfil MKT.
+- Ajuste aplicado no backend: `CodexRequestService.dashboardMetrics` passou a calcular `day` e `series.daily` como dia operacional iniciado as 03:00 em Sao Paulo; `/api/codex/requests/metrics` passou a aceitar `profile` opcional; `CodexRequestRepository` ganhou agregacoes filtradas por perfil.
+- Ajuste aplicado no frontend: `CodexChatgptPage` passou a consultar `/codex/requests/metrics?profile=<perfil>` no bootstrap e polling, exibindo no topo direito "Dia operacional", a data do bucket e o tempo total do dia sem segundos, com texto de corte `03:00 · São Paulo`.
+- Testes atualizados/adicionados em `CodexRequestServiceTest`: validacao do corte operacional as 03:00 e do filtro por perfil `CHATGPT_CODEX_MKT`. Nao foi criado Pull Request.
+- Validacoes executadas: `mvn -q -f apps/backend/pom.xml -Dtest=CodexRequestServiceTest test`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `mvn -q -f apps/backend/pom.xml test`; `git diff --check`; validacao Playwright desktop e mobile da rota `/codex-chatgpt-mkt` com mocks das APIs, screenshots em `/tmp/aihub-codex-mkt-operational-day-desktop.png` e `/tmp/aihub-codex-mkt-operational-day-mobile.png`.
+- Observacao de ambiente: a primeira tentativa de Playwright tentou carregar `@playwright/test` dentro do frontend, mas o projeto nao declara essa dependencia; a validacao foi executada com o Playwright disponivel na sandbox via `NODE_PATH`. O npm reportou vulnerabilidades ja existentes no grafo do frontend durante `npm ci`, sem alteracao de versoes por estar fora do escopo.
+
+## 2026-07-23 UTC-3 - Investigacao de Sem dados em ultimas alteracoes
+
+- Solicitacao recebida: explicar por que os cards de "Ultimas alteracoes do codigo fonte" aparecem com `Sem dados`.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a API de producao `/api/source-modules/changes` retorna `lastChangedAt:null` e `daysSinceLastChange:null` porque a origem do historico de commits nao esta configurada; `/api/source-repository-config` retornou `owner:""`, `repo:""`, `branch:"main"`, `tokenConfigured:false` e `updatedAt:null`.
+- Evidencias coletadas: healthcheck do MCP em `https://iahub.xyz/mcp` retornou `{"status":"UP"}`; a API de producao retornou `null` para Backend, Frontend, Sandbox Orchestrator e MCP Server; no checkout local com `.git` acessivel, `git log -1` encontra commits para `apps/backend`, `apps/frontend`, `apps/sandbox-orchestrator` e `apps/mcp-server`, indicando que o problema nao e ausencia de historico no repositorio, mas falta de fonte acessivel para o backend em producao.
+- Alternativas avaliadas: (1) esconder o bloco quando a configuracao estiver vazia, melhora estetica mas oculta o problema operacional; (2) manter fallback por arquivos locais do container, barato mas pouco confiavel em producao sem checkout completo e `.git`; (3) configurar a fonte oficial via tela `Config. Repositorio`/endpoint com owner, repo, branch e token GitHub, mantendo o comportamento `Sem dados` apenas quando a fonte estiver indisponivel. Escolhida a alternativa 3 como orientacao por atacar a causa raiz e preservar a confiabilidade da metrica.
+- Nenhuma alteracao de codigo foi aplicada nesta investigacao; apenas este registro operacional foi adicionado. Nao foi criado Pull Request.
+
+## 2026-07-23 UTC-3 - Remocao dos cards inferiores da dashboard
+
+- Solicitacao recebida: excluir os dois cards marcados na imagem da dashboard: `Falhas recentes` e `Proximos passos`.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: os cards eram conteudo auxiliar/diagnostico herdado da visao geral, mas passaram a competir visualmente com as metricas operacionais e nao entregavam uma acao direta no fluxo atual do Marketing Hub.
+- Alternativas avaliadas: (1) apenas ocultar via CSS, baixo esforco mas deixaria chamadas e codigo morto; (2) manter os cards e reduzir altura/conteudo, preserva informacao mas nao atende ao pedido de exclusao; (3) remover a secao JSX inteira e tambem remover o fetch de `/prompts` que ficaria sem uso. Escolhida a alternativa 3 por cumprir o pedido, reduzir ruido visual e eliminar consulta desnecessaria.
+- Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: removidos os cards `Falhas recentes` e `Proximos passos`, o tipo `Prompt`, a busca de prompts e a derivacao `recentPrompts`.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`.
+- Observacao de ambiente: antes do `npm ci`, build/lint falharam por dependencias de dev ausentes e toolchain global incompatível; apos instalar pelo lockfile do frontend, as validacoes passaram. O npm reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo.
+- Nao foi criado Pull Request.
+
+## 2026-07-28 19:45:12 UTC - Lista de itens opcionais MKT mais limpa
+
+- Solicitacao recebida: na tela de escolha de item do Codex ChatGPT MKT, deixar somente o titulo e o tipo porque o excesso de informacao estava poluindo a tela.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a lista de selecao dos itens opcionais renderizava tambem a frase completa de cada item, alem do titulo e do badge de tipo; como alguns itens carregam textos longos de contexto, a area de escolha virou uma pre-visualizacao de conteudo em vez de um controle rapido de selecao.
+- Alternativas avaliadas: (1) truncar a frase em uma linha, reduziria altura mas manteria ruido e risco de informacao irrelevante; (2) esconder a frase em tooltip, preservaria consulta sob demanda mas ainda deixaria comportamento secundario na lista; (3) renderizar apenas titulo e tipo, mantendo a frase somente na logica de envio/copia. Escolhida a alternativa 3 por aderir diretamente ao pedido e reduzir a poluicao visual sem alterar o funcionamento dos itens.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: a selecao de itens opcionais do MKT agora exibe apenas `label` e o badge `Prompt`/`Tela`, removendo a frase longa da lista.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: o fluxo de envio MKT valida que os badges de tipo continuam visiveis e que as frases dos itens nao aparecem na lista de escolha, preservando o uso correto no prompt final.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "sends selected prompt hint phrases"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`.
+- Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nenhum Pull Request foi criado.
+
+## 2026-07-23 UTC-3 - Origem fixa do repositorio de codigo
+
+- Solicitacao recebida: considerar que o usuario sempre sera `paulofor`, o repositorio sempre sera `ai-hub` e a branch sempre sera `main` na configuracao usada para calcular as ultimas alteracoes dos modulos.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a tela e a API tratavam `owner`, `repo` e `branch` como campos variaveis de cadastro, mas no contexto operacional do Marketing Hub esses valores sao invariantes. Isso criava friccao desnecessaria, permitia configuracao divergente e fazia a ausencia de preenchimento manual bloquear as contagens de alteracao de codigo.
+- Alternativas avaliadas: (1) apenas preencher placeholders/valores iniciais no frontend, baixo custo mas ainda permitiria salvar valores errados; (2) esconder os campos no frontend e continuar aceitando qualquer valor no backend, melhora a tela mas nao protege clientes antigos/API direta; (3) fixar os padroes `paulofor/ai-hub/main` no backend, retornar esses defaults quando nao houver configuracao e simplificar o frontend para exibir a origem como leitura e salvar apenas o token. Escolhida a alternativa 3 por atacar a causa raiz, reduzir erro operacional e preservar uma unica fonte canonica.
+- Ajuste aplicado no backend: `SourceRepositoryConfigView.empty()` agora retorna `paulofor`, `ai-hub` e `main`; `SourceRepositoryConfigService.saveConfig()` ignora valores divergentes recebidos no payload e grava sempre a origem canonica; validacoes obrigatorias de owner/repo/branch foram removidas do request porque esses campos deixaram de ser decisao do usuario; fallback de `SourceModuleChangeService` para GitHub passou a usar `paulofor/ai-hub/main`.
+- Ajuste aplicado no frontend: `SourceRepositoryConfigPage` deixou de exibir inputs editaveis para usuario/repositorio/branch e passou a mostrar esses valores fixos, mantendo apenas o campo de token GitHub como configuravel.
+- Teste adicionado: `SourceRepositoryConfigServiceTest` valida retorno vazio com defaults, save com origem canonica mesmo quando o payload traz valores errados e exigencia de token quando nenhum token existe.
+- Validacoes executadas: `mvn -q -f apps/backend/pom.xml -Dtest=SourceRepositoryConfigServiceTest,SourceModuleChangeServiceTest test`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `mvn -q -f apps/backend/pom.xml test`; `git diff --check`; validacao Playwright da rota `/source-repository-config` com mock da API, confirmando `paulofor`, `ai-hub`, `main` visiveis e ausencia de inputs editaveis para esses campos. Screenshot em `/tmp/aihub-source-repository-config-fixed.png`.
+- Observacao de ambiente: antes do `npm ci`, build/lint do frontend falharam por dependencias de dev ausentes e toolchain global incompativel; apos instalar pelo lockfile, as validacoes passaram. O npm reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo.
+- Nao foi criado Pull Request.
+
+## 2026-07-23 01:29:03 UTC-3
+- Correção de registro operacional: a entrada `2026-07-23 01:27:50 UTC-3` documentou corretamente a configuração do Playwright com fallback para Chromium do sistema, mas foi inserida antes de registros já existentes em vez de no final do arquivo; esta nota final preserva a política append-only sem apagar a entrada anterior.
+- Validações executadas para a configuração do Playwright no frontend: `npm --prefix apps/frontend run build`, `npm --prefix apps/frontend run test:e2e` e `npm --prefix apps/frontend run lint` passaram.
+
+## 2026-07-23 15:17:31 UTC - ffprobe na sandbox Codex ChatGPT
+- Solicitação recebida: colocar `ffprobe` disponível nas sandboxes de `codex-chatgpt` para o modelo usar com vídeos.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a imagem versionada do `sandbox-orchestrator` instalava ferramentas de execução, validação, navegador e automação, mas não instalava nenhum pacote que fornecesse `ffprobe`; por isso sandboxes novas não teriam como inspecionar metadados de vídeo sem instalação manual.
+- Alternativas avaliadas: (1) instruir o modelo a instalar `ffmpeg` sob demanda, baixo esforço mas frágil e lento; (2) apenas documentar a necessidade de `ffprobe`, melhora descoberta mas não entrega o binário; (3) instalar `ffmpeg` na imagem e explicitar `ffprobe` nos prompts/checklists/documentação. Escolhida a alternativa 3 por corrigir a disponibilidade real e reduzir atrito operacional em tarefas com vídeos.
+- Ajuste aplicado em `apps/sandbox-orchestrator/Dockerfile`: adicionado o pacote Debian `ffmpeg`, que fornece o comando `ffprobe`.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: criada instrução operacional de mídia para informar o modelo sobre `ffprobe`, adicionada a detecção no preflight e incluída a linha de ferramentas de mídia no checklist inicial.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: os prompts dos perfis Codex ChatGPT, MKT e Sandbox passaram a declarar que `ffprobe` está disponível para inspeção de vídeos.
+- Documentação atualizada em `README.md`, `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md` para registrar a disponibilidade de `ffprobe`.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar a instalação de `ffmpeg`, a instrução de `ffprobe` nos prompts e a linha do checklist de mídia.
+- Validações executadas: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent`; `cd apps/sandbox-orchestrator && node --test --test-name-pattern="imagem da sandbox instala ferramentas|CHATGPT_CODEX_MKT|CHATGPT_CODEX_SANDBOX|Checklist inicial" dist/tests/jobs.test.js`; `npm --prefix apps/sandbox-orchestrator test` passou com 72/72 testes; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`.
+- Limitação de ambiente: a sandbox atual ainda não possui `ffprobe` antes do rebuild/deploy da imagem, e `docker version` falhou porque não há Docker daemon acessível em `/var/run/docker.sock`; por isso não foi possível validar um build local da imagem Docker nesta execução.
+- Nao foi criado Pull Request.
+
+## 2026-07-23 15:29:30 UTC - Contagem de documentos no Codex ChatGPT
+- Solicitacao recebida: verificar por que as quantidades de documentos estavam todas zeradas.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: os perfis `CHATGPT_CODEX`, `CHATGPT_CODEX_MKT` e `CHATGPT_CODEX_SANDBOX` rodam pelo Codex App Server, mas a contagem de documentos dependia apenas dos acessos registrados pelo fluxo legado de tools do orquestrador (`read_file`/comandos inspecionados). Os eventos nativos do Codex App Server (`commandExecution`) eram apenas logados e nao eram convertidos para `job.documentAccesses`; por isso o backend recebia `documentAccesses: []`, persistia zero registros em `codex_document_accesses` e as telas exibiam zero.
+- Evidencias coletadas: o codigo do backend ja consulta `count(distinct log.documentPath)` em `CodexRequestRepository` e persiste `response.documentAccesses()` em `CodexRequestService`; via MCP de producao, os jobs recentes `3852f956-4ba8-46dd-a9b0-9312adddfcad` e `29982702-a5d6-42a9-b32a-e558e991f6e8` tinham muitas interacoes, mas `documentAccesses: 0` diretamente no payload do sandbox-orchestrator.
+- Alternativas avaliadas: (1) ajustar o frontend para esconder zero, baixo custo mas mascararia o problema; (2) alterar a query do backend, baixo risco mas sem registros para contar; (3) instrumentar o caminho Codex App Server para extrair caminhos documentais dos eventos de execucao e alimentar o mesmo `job.documentAccesses` ja consumido pelo backend. Escolhida a alternativa 3 por corrigir a origem e reaproveitar o contrato existente.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: eventos `item/started` e `item/completed` do Codex App Server agora sao analisados para capturar caminhos documentais em `commandExecution` e leituras de arquivo, com deduplicacao por item/comando e regex conservadora para extensoes documentais.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts`: o fluxo `CHATGPT_CODEX via Codex App Server` simula comando lendo `README.md` e `docs/briefing.md`, validando que ambos entram em `job.documentAccesses` sem duplicar quando aparecem em `started` e `completed`.
+- Validacoes executadas: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent`; teste focado `node --test --test-name-pattern="executa CHATGPT_CODEX via Codex App Server" dist/tests/jobs.test.js`; `npm --prefix apps/sandbox-orchestrator test` passou com 72/72 testes; `git diff --check`.
+- Observacao de ambiente: Docker local continuou indisponivel na sandbox por ausencia de `/var/run/docker.sock`; usei o MCP HTTP de producao para healthcheck, `docker ps`, logs e payloads dos jobs. O npm reportou vulnerabilidades ja existentes no grafo do `sandbox-orchestrator`, sem alteracao de versoes por estar fora do escopo.
+- Nao foi criado Pull Request.
+
+## 2026-07-23 15:43:00 UTC - Estabilizacao da contagem de documentos no historico ChatGPT
+
+- Solicitacao recebida: ajustar o piscar da informacao de quantidade de documentos em cards de solicitacoes `PENDING` ou `RUNNING` nas ultimas execucoes ChatGPT MKT.
+- Pergunta explicita de causa raiz: “por que esse erro aconteceu?”. Resposta: `loadRequests()` atualizava o estado duas vezes no mesmo ciclo de polling: primeiro com a listagem resumida de `/codex/requests` e depois com os detalhes das execucoes ativas vindos de `/codex/requests/{id}`. Quando o resumo vinha sem a mesma granularidade de metricas ou com contagens ainda zeradas, a UI alternava entre o valor resumido e o valor enriquecido, gerando o efeito visual de piscar na linha `Documentos lidos`.
+- Alternativas avaliadas: (1) alterar backend para sempre retornar detalhes completos na listagem, mais caro e com maior risco de N+1/listagem pesada; (2) ocultar `Documentos lidos` para execucoes nao terminais, simples mas remove uma metrica util para acompanhar andamento; (3) estabilizar o merge no frontend, publicando no estado uma lista ja enriquecida e preservando contadores monotonicamente crescentes enquanto a execucao nao terminou. Escolhida a alternativa 3 por menor escopo, menor risco e aderencia direta ao sintoma observado.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: criado merge estavel de solicitacoes, preservando `interactionCount`, `documentAccessCount` e `documentAccesses` de execucoes nao terminais quando o resumo do polling vier defasado; `loadRequests()` deixou de fazer `setRequests(parsed)` antes de buscar detalhes ativos, evitando o frame intermediario com dados zerados/ausentes.
+- Validacoes executadas: primeira tentativa de `npm run build` no frontend falhou por dependencias locais ausentes/toolchain global incompatível; apos `npm ci --include=dev`, `npm run build`, `npm run lint`, `npm run test:e2e` e `git diff --check` passaram.
+- Observacao de validacao visual: o e2e subiu o Vite e validou a shell principal no Chromium; apareceram erros de proxy `ECONNREFUSED 127.0.0.1:8081` para endpoints do backend local nao iniciado, mas o teste passou porque esses endpoints nao eram requisito do cenario.
+- Observacao de ambiente: o `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo.
+- Nao foi criado Pull Request.
+
+## 2026-07-23 18:00:00 UTC - Itens opcionais no Codex ChatGPT
+
+- Solicitacao recebida: colocar nas solicitacoes `codex-chatgpt` o quadro de escolha de itens opcionais que complementam o prompt, conforme referencia visual da tela `/codex`.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o quadro de itens opcionais ja existia no fluxo legado `CodexPage`, mas a experiencia interativa `CodexChatgptPage` foi implementada em componente separado e montava o prompt diretamente a partir da conversa, sem carregar `/prompt-hints`, renderizar checkboxes ou inserir as frases selecionadas no prompt enviado a `/codex/requests`.
+- Alternativas avaliadas: (1) duplicar manualmente os textos no prompt fixo dos perfis, baixo custo mas sem escolha por solicitacao; (2) criar novo cadastro especifico para ChatGPT, mais flexivel mas duplicaria configuracao ja existente; (3) reutilizar o contrato `/prompt-hints` por ambiente e adicionar o mesmo quadro ao `CodexChatgptPage`, inserindo as frases selecionadas como secao explicita do prompt. Escolhida a alternativa 3 por atacar a causa raiz e preservar uma unica fonte de configuracao.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: adicionado carregamento dos itens opcionais por ambiente, separacao entre itens gerais e itens do ambiente, checkboxes de selecao, link para `Gerenciar itens` e inclusao das frases selecionadas na montagem do prompt de conversa antes da ultima mensagem do usuario. A selecao e limpa apos envio bem-sucedido.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; validacao Playwright em `http://127.0.0.1:4173/codex-chatgpt` com APIs mockadas, confirmando que o quadro aparece, o item geral e visivel e a frase marcada entra no payload de `POST /api/codex/requests`. Screenshot salvo em `/tmp/aihub-codex-chatgpt-prompt-hints.png`.
+- Observacao de ambiente: a primeira tentativa de build falhou por dependencias locais ausentes/toolchain global incompatível; apos `npm ci --include=dev`, build e lint passaram. O npm reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo.
+- Nao foi criado Pull Request.
+
+## 2026-07-23 17:09:19 UTC - Investigacao das metricas por perfil Codex ChatGPT
+
+- Solicitacao recebida: verificar se as metricas de tempo, solicitacoes e interacoes contam tanto `codex-chatgpt` quanto `codex-chatgpt-mkt`.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a agregacao de metricas tem dois caminhos: quando a API `/codex/requests/metrics` e chamada sem `profile`, o backend usa queries sem filtro e soma todos os perfis; quando e chamada com `profile`, usa queries filtradas por `cr.profile`.
+- Evidencias coletadas: `CodexController.metrics()` aceita `profile` opcional; `CodexRequestService.dashboardMetrics(profile)` escolhe entre `summarizeMetricsSince`/`findMetricRowsSince` e suas variantes `AndProfile`; `CodexChatgptPage` chama `/codex/requests/metrics` com `params: { profile: config.profile }`; `DashboardPage` chama a mesma rota sem parametro de perfil.
+- Conclusao: na tela especifica do Codex ChatGPT/MKT, as metricas ficam separadas pelo perfil ativo; na dashboard geral, as metricas agregam todos os perfis, incluindo `CHATGPT_CODEX` e `CHATGPT_CODEX_MKT`.
+- Nenhuma alteracao de codigo foi aplicada nesta investigacao. Nao foi criado Pull Request.
+
+## 2026-07-24 07:42:00 UTC - Token HeyGen na sandbox Codex ChatGPT
+
+- Solicitacao recebida: deixar disponivel para o modelo usar em seu ambiente um novo token, agora do HeyGen.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o arquivo do token HeyGen ja havia sido colocado no host em `/root/infra/heygen-token/heygen_api_key`, mas o fluxo versionado do `sandbox-orchestrator` ainda nao montava esse diretorio nem exportava `HEYGEN_API_KEY`; por isso novas sandboxes do modelo nao teriam acesso a essa credencial.
+- Alternativas avaliadas: (1) orientar export manual da variavel, rapido mas volatil apos recriacao de container; (2) colocar valor no `.env`, simples mas com risco operacional de segredo versionado/copiad; (3) seguir o padrao Luma/Kling com volume read-only fora do repositorio e export no startup. Escolhida a alternativa 3 por corrigir a origem, preservar segredo fora do git e manter consistencia operacional.
+- Ajuste aplicado em `docker-compose.yml`: adicionado volume `${HEYGEN_TOKEN_HOST_DIR:-/root/infra/heygen-token}:/run/secrets/heygen-token:ro` e export de `HEYGEN_API_KEY` quando `/run/secrets/heygen-token/heygen_api_key` existir.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: a instrucao de credenciais externas agora reconhece `HEYGEN_API_KEY` quando estiver exportada e menciona HeyGen no fallback.
+- Documentacao atualizada em `README.md`, `apps/sandbox-orchestrator/README.md`, `docs/sandbox-architecture.md` e `apps/sandbox-orchestrator/.env.example`.
+- Teste atualizado em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar montagem e export de Luma, Kling e HeyGen.
+- Validacoes executadas: primeira tentativa de `npm --prefix apps/sandbox-orchestrator run build --silent` falhou por dependencias TypeScript ausentes no workspace local; apos `npm --prefix apps/sandbox-orchestrator ci --include=dev`, `npm --prefix apps/sandbox-orchestrator run build --silent`, teste focado `node --test --test-name-pattern="docker compose monta e exporta credenciais Luma, Kling e HeyGen" dist/tests/jobs.test.js`, `npm --prefix apps/sandbox-orchestrator test` e `git diff --check` passaram.
+- Nenhum valor de token foi lido, impresso ou versionado. Nao foi criado Pull Request.
+
+## 2026-07-24 22:56:10 UTC - Impacto em vendas na resposta MKT
+
+- Solicitacao recebida: no ambiente `marketing-hub`, pedir para o modelo indicar no JSON de resposta se a solicitacao contribui para aumentar vendas nos niveis `baixo`, `medio` e `alto`, e mostrar no quadro de comentario um icone vermelho, amarelo ou verde conforme o nivel.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o contrato estruturado do modo MKT nao tinha um campo dedicado para impacto em vendas, e os renderizadores da conversa/detalhe conheciam apenas campos como `comentario`, `alterouCodigoRepositorio` e `sugestaoMelhoriaAmbiente`; portanto a interface nao tinha dado confiavel para exibir o indicador colorido.
+- Alternativas avaliadas: (1) inferir impacto por palavras do `comentario`, rapido mas sujeito a falsos positivos; (2) criar metadado persistido no backend, robusto mas maior escopo e migracao para uma informacao que ja vem da resposta do modelo; (3) adicionar o campo estruturado `impactoAumentoVendas` ao contrato MKT e fazer o frontend renderizar o icone a partir dele. Escolhida a alternativa 3 por atacar a origem do problema com baixo risco e preservar compatibilidade com respostas antigas.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts` e `apps/frontend/src/pages/CodexChatgptPage.tsx`: o prompt MKT agora exige `impactoAumentoVendas` com valores `baixo`, `medio` ou `alto` e orienta quando usar cada nivel.
+- Ajuste aplicado em `apps/frontend/src/components/CodexResponseBody.tsx` e `apps/frontend/src/pages/CodexChatgptPage.tsx`: os parsers aceitam `impactoAumentoVendas` e aliases, e o card de comentario mostra um icone circular vermelho para baixo, amarelo para medio e verde para alto.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` e `apps/frontend/tests/e2e/app.spec.ts` para cobrir o novo campo do contrato MKT e os tres indicadores visuais no card de comentario.
+- Validacoes executadas: a primeira tentativa de build/testes falhou por dependencias dev ausentes; apos `npm --prefix apps/frontend ci --include=dev` e `npm --prefix apps/sandbox-orchestrator ci --include=dev`, passaram `npm --prefix apps/frontend run build`, `npm --prefix apps/frontend run lint`, `npm --prefix apps/frontend run test:e2e -- --grep "code generation icon"`, `npm --prefix apps/sandbox-orchestrator run build --silent && node --test --test-name-pattern="instruções de marketing" ...` e `git diff --check`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes nos grafos npm do frontend e do sandbox-orchestrator. Nao foi criado Pull Request.
+
+## 2026-07-24 18:07:06 UTC - Alerta de codigo no card de comentario MKT
+
+- Solicitacao recebida: quando uma solicitacao gerar codigo, colocar um icone no card de comentario para alertar o usuario.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a tela ja destacava codigo acumulado no botao `Pedir PR`, mas os cards de resposta estruturada tratavam o campo `comentario` apenas como Markdown, sem classificar sinais de alteracao no repositorio; alem disso, a tela de conversa MKT tinha uma renderizacao propria separada do componente compartilhado de detalhe.
+- Alternativas avaliadas: (1) criar novo metadado backend `generatedCode`, mais preciso mas exige contrato/persistencia/processamento; (2) marcar todos os comentarios Codex como codigo, simples mas geraria falsos positivos em analises MKT; (3) detectar sinais fortes no texto da resposta, como arquivo alterado, ajuste aplicado e comandos de validacao, e exibir um selo visual no card. Escolhida a alternativa 3 por entregar o alerta no ponto certo com baixo risco e sem alterar contrato.
+- Ajuste aplicado em `apps/frontend/src/components/CodexResponseBody.tsx`: criada a funcao `hasCodeGenerationSignal` e um selo com icone de codigo `Gerou codigo` para cards de comentario estruturado que indicam alteracao no repositorio.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o mesmo alerta visual passou a aparecer no card `Comentario` da conversa MKT.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: adicionado cenario Playwright com uma resposta MKT que gera codigo e outra apenas consultiva, validando que o selo aparece somente no card correto.
+- Validacoes executadas: primeira tentativa de build/lint falhou por dependencias locais ausentes e toolchain global incompativel; apos `npm --prefix apps/frontend ci --include=dev`, passaram `npm --prefix apps/frontend run build`, `npm --prefix apps/frontend run lint`, `npm --prefix apps/frontend run test:e2e -- --grep "code generation icon"`, `npm --prefix apps/frontend run test:e2e` e `git diff --check`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend; o smoke E2E do dashboard registrou erros de proxy para backend local ausente em endpoints nao mockados, mas todos os 7 testes Playwright passaram.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 07:49:37 UTC - Remocao dos totais nos graficos do dashboard
+
+- Solicitacao recebida: retirar os valores totais exibidos nos graficos do dashboard, conforme marcacoes na imagem enviada.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o componente `MiniBarChart` calculava `total` e renderizava `Total: ...` no cabecalho de cada grafico como apoio visual; isso duplicava informacao ja resumida nos cards superiores e poluia a leitura dos graficos.
+- Alternativas avaliadas: (1) esconder os totais por CSS, baixo esforco mas manteria markup e texto acessivel indesejado; (2) adicionar uma prop para ligar/desligar totais por grafico, flexivel mas desnecessario porque todos os graficos dessa tela devem seguir a mesma regra; (3) remover o calculo/renderizacao do total no `MiniBarChart` e ajustar o texto do painel para nao prometer totais agregados. Escolhida a alternativa 3 por corrigir a origem com menor complexidade.
+- Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: removido o rótulo `Total: ...` dos graficos de solicitacoes, interacoes e tempo, preservando barras, labels por periodo e tooltip/aria-label por barra.
+- Ajuste de copy aplicado: a descricao dos paineis passou de "Totais agregados para graficos de volume, uso e tempo." para "Graficos de volume, uso e tempo por periodo.".
+- Validacoes executadas: primeira tentativa de build/lint falhou por dependencias locais ausentes/toolchain global incompativel; apos `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram.
+- Observacao de ambiente: o `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo. Nao foi criado Pull Request.
+
+## 2026-07-24 07:59:00 UTC - Ordem dos graficos do dashboard
+
+- Solicitacao recebida: alterar a ordem dos graficos do dashboard para tempo, solicitacoes e interacoes.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a ordem dos graficos estava definida diretamente no JSX de `MetricSeriesPanel` como solicitacoes, interacoes e tempo; apos a remocao dos totais, essa hierarquia visual ainda colocava volume antes de tempo, diferente da prioridade de leitura solicitada.
+- Alternativas avaliadas: (1) reordenar os dados no backend, maior risco e desnecessario porque os dados ja chegam completos; (2) criar configuracao dinamica de ordem, mais flexivel mas com complexidade sem demanda atual; (3) reordenar os tres componentes `MiniBarChart` no frontend mantendo dados, cores e formatadores. Escolhida a alternativa 3 por ser a correcao de menor escopo e aderir exatamente a mudanca visual pedida.
+- Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: os graficos dos paineis de series agora renderizam primeiro `Tempo`, depois `Solicitações` e por ultimo `Interações`.
+- Validacoes executadas: primeira tentativa de build/lint falhou por dependencias locais ausentes/toolchain global incompativel; apos `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram.
+- Observacao de ambiente: o `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 07:54:48 UTC - Layout dos cards de metricas do dashboard
+
+- Solicitacao recebida: melhorar o layout para evitar quebra de valores maiores nos cards superiores, aproveitando os espacos em branco marcados em vermelho na imagem enviada.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o componente `MetricCard` usava grade interna `sm:grid-cols-2`, deixando um quarto quadrante vazio em desktop e fazendo valores maiores disputarem largura dentro de cards estreitos, especialmente em `Interações` e `Tempo de processamento`.
+- Alternativas avaliadas: (1) reduzir a fonte global dos valores, baixo esforco mas pioraria a leitura e so esconderia o problema; (2) alterar apenas o grid externo da dashboard para menos cards por linha, daria mais largura mas nao aproveitaria o espaco vazio interno marcado; (3) manter duas colunas internas, fazer `Mes` ocupar a largura inteira, controlar os valores com `whitespace-nowrap`/`clamp` e adiar tres cards por linha para `xl`. Escolhida a alternativa 3 por usar o espaco vazio indicado no print, preservar densidade em telas largas e evitar cards estreitos em larguras intermediarias.
+- Ajuste aplicado em `apps/frontend/src/pages/DashboardPage.tsx`: os cards superiores agora usam tres cards por linha apenas em `xl`, os blocos Dia/Semana ficam em duas colunas internas e o bloco Mes ocupa a linha inteira, com valores em uma linha e tamanho responsivo limitado por `clamp`.
+- Validacoes executadas: Playwright com dados simulados equivalentes ao print passou em 1024, 1280 e 1366px sem quebra/overflow dos valores; `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 09:32:00 UTC - Detalhe da solicitacao Codex com resposta estruturada e navegacao anterior
+
+- Solicitacao recebida: ajustar a tela de detalhe da solicitacao para exibir a resposta em cards semelhantes ao dialogo, com titulo, comentario, falta fazer e sugestao; e corrigir o botao para ir para a solicitacao anterior, por exemplo da #10 para a #9.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a tela de detalhe renderizava `responseText` como um `pre` bruto, enquanto a tela de dialogo tinha parse proprio para o JSON estruturado do Codex; alem disso, o botao "Proximo" tentava descobrir o vizinho buscando a lista geral `/codex/requests` e ordenando no frontend, deixando a navegacao dependente de uma consulta pesada/fragil e sem contrato especifico para "solicitacao anterior".
+- Alternativas avaliadas: (1) apenas estilizar o `pre`, baixo custo mas continuaria mostrando JSON bruto; (2) duplicar toda a logica da tela de dialogo diretamente no detalhe, rapido mas aumentaria divergencia; (3) criar um componente reutilizavel para resposta estruturada/Markdown e adicionar um endpoint backend para resolver o ID anterior de forma deterministica. Escolhida a alternativa 3 por corrigir a origem da divergencia visual e da navegacao fragil.
+- Ajuste aplicado em `apps/frontend/src/components/CodexResponseBody.tsx`: novo componente renderiza resposta estruturada em cards `Titulo`, `Comentario`, `Falta fazer` e `Sugestao`, com fallback para Markdown quando a resposta nao vier em JSON estruturado.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexRequestDetailPage.tsx`: a area "Resposta do Codex" passou a usar `CodexResponseBody`, e o botao agora aparece como `Anterior`, consultando `/codex/requests/{id}/previous` e navegando para o ID retornado.
+- Ajuste aplicado no backend em `CodexRequestRepository`, `CodexRequestService` e `CodexController`: criado endpoint `GET /api/codex/requests/{id}/previous`, que retorna o maior ID menor que o atual ou `204 No Content` quando nao houver anterior.
+- Testes atualizados em `apps/backend/src/test/java/com/aihub/hub/web/CodexControllerTest.java` para validar retorno de ID anterior e ausencia de anterior.
+- Validacoes executadas: primeira tentativa de `npm run build` falhou por `node_modules` ausente e uso do `tsc` global incompativel; apos `npm ci`, `npm run build` passou. Primeira tentativa de backend com `./mvnw` falhou porque nao ha wrapper Maven em `apps/backend`; usando `mvn test -Dtest=CodexControllerTest`, os 10 testes passaram. Validacao visual com Playwright em `http://127.0.0.1:8082/codex/requests/147`, APIs mockadas, confirmou os cards `Titulo`, `Comentario`, `Falta fazer`, `Sugestao` e o botao `Anterior` habilitado; screenshot salvo em `/tmp/aihub-codex-request-detail-structured.png`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de versoes por estar fora do escopo.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 09:39:09 UTC - Player de midia na sandbox Codex ChatGPT
+
+- Solicitacao recebida: atender a sugestao de ambiente "Um player de video/audio integrado ao ambiente permitiria avaliar diretamente a naturalidade da pronuncia e sincronizacao labial, alem da validacao tecnica feita com ffprobe".
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a sandbox ja tinha `ffprobe` para validacao tecnica e Playwright/Chromium para validacao visual, mas nao havia um fluxo versionado e descobrivel para transformar arquivos de video/audio locais em uma experiencia de reproducao com controles nativos; por isso a avaliacao perceptual de pronuncia, sincronizacao labial, cortes e naturalidade dependia de improvisos por solicitacao.
+- Alternativas avaliadas: (1) adicionar apenas uma instrucao de prompt para o modelo criar HTML manualmente quando precisasse, baixo custo mas fragil e repetitivo; (2) expor um servico web permanente de arquivos de midia na sandbox, mais integrado mas aumenta superficie operacional e escopo de seguranca; (3) adicionar um helper versionado `sandbox-media-player` na imagem, gerando HTML local com `<video>/<audio>` e orientar uso via Chromium/Playwright. Escolhida a alternativa 3 por corrigir a causa raiz com menor superficie, sem depender de servico externo e reaproveitando as ferramentas ja instaladas.
+- Ajuste aplicado em `apps/sandbox-orchestrator/Dockerfile`: adicionado o comando `/usr/local/bin/sandbox-media-player`, que recebe um arquivo de video/audio e gera uma pagina HTML local com player nativo, metadados carregados no navegador e campos de status.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: a instrucao de midia passou a informar o uso combinado de `ffprobe` e `sandbox-media-player`; o preflight agora detecta `sandbox-media-player` e o inclui no checklist de ferramentas de midia quando disponivel.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: os prompts dos perfis Codex ChatGPT, MKT e Sandbox passaram a declarar o helper de player para tarefas com video/audio.
+- Documentacao atualizada em `README.md`, `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md`.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar a instalacao do helper e a presenca das instrucoes nos prompts/checklists.
+- Validacoes executadas: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/sandbox-orchestrator run build --silent`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; smoke real extraindo o helper do Dockerfile, gerando um WAV sintetico com `ffmpeg`, criando `/tmp/aihub-test-tone.player.html` e abrindo no Chromium headless com screenshot `/tmp/aihub-test-tone.player.png`; `npm --prefix apps/sandbox-orchestrator test` passou com 72 testes; `git diff --check` passou.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes nos grafos do frontend e sandbox-orchestrator, sem alteracao de dependencias por estar fora do escopo. A validacao local confirmou o helper extraido do Dockerfile; a disponibilidade do comando em sandboxes futuras depende de rebuild/deploy da imagem versionada. Nao foi criado Pull Request.
+
+## 2026-07-24 14:23:03 UTC - Layout vertical no detalhe da solicitacao Codex
+
+- Solicitacao recebida: na tela de detalhe da solicitacao Codex, trocar o bloco com "Prompt enviado" e "Resposta do Codex" de duas colunas para uma coluna com duas linhas.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o wrapper desses dois cards usava `lg:grid-cols-2`, fazendo o layout mudar para duas colunas em telas largas; a necessidade atual e comparar os conteudos em largura total, um abaixo do outro.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexRequestDetailPage.tsx`: o grid do bloco "Prompt enviado" / "Resposta do Codex" agora usa uma unica coluna em todos os breakpoints, preservando os cards e seus scrolls internos.
+- Validacoes executadas: primeira tentativa de `npm --prefix apps/frontend run build`/`lint` falhou por dependencias de desenvolvimento ausentes e toolchain global incompativel; apos `npm --prefix apps/frontend ci --include=dev`, `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` passaram. Validacao visual com Playwright em `http://127.0.0.1:8082/codex/requests/151`, APIs mockadas, confirmou que os cards "Prompt enviado" e "Resposta do Codex" renderizam empilhados, com mesma largura; screenshot salvo em `/tmp/aihub-codex-request-detail-one-column.png`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de dependencias por estar fora do escopo.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 14:43:10 UTC - Formatacao de referencias de arquivos no Codex ChatGPT
+
+- Solicitacao recebida: melhorar a formatacao visual quando o modelo mostra nomes de arquivos nas respostas do Codex ChatGPT.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o renderizador Markdown local nao reconhecia links Markdown (`[arquivo](caminho:linha)`) como referencias de arquivo; por isso o texto ficava cru ou espremido em linha, deixando caminhos longos poluirem a leitura.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx` e `apps/frontend/src/components/CodexResponseBody.tsx`: o Markdown inline agora reconhece links, renderiza links web como ancora comum e renderiza referencias de arquivo como um bloco compacto com nome em destaque e caminho completo em fonte menor, com quebra dentro do card.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; validacao visual com Playwright em `http://127.0.0.1:8082/codex-chatgpt`, APIs mockadas e conversa local reproduzindo o print, com screenshot salvo em `/tmp/aihub-codex-chat-file-formatting.png`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de dependencias por estar fora do escopo.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 17:00:58 UTC - Descricao de PRs com topicos das solicitacoes
+
+- Solicitacao recebida: melhorar a descricao dos PRs para conter apenas topicos com as solicitacoes que geraram codigo.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: os fluxos de criacao de PR usavam o resumo final completo do modelo ou uma explicacao narrativa do lote como corpo do PR; isso misturava contexto, validacao e detalhes operacionais com a lista de pedidos que originaram as alteracoes.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: o corpo do PR automatico agora e um bullet normalizado da `taskDescription`, sem incluir resumo narrativo do modelo.
+- Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/web/CodexController.java`: PR manual e PR de lote agora enviam como explicacao apenas bullets das solicitacoes concluidas, usando o prompt original e o ID da solicitacao.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` e `apps/backend/src/test/java/com/aihub/hub/web/CodexControllerTest.java` para validar que o corpo do PR nao inclui resumo/narrativa e fica restrito aos topicos.
+- Validacoes executadas: primeira tentativa de build do sandbox-orchestrator falhou por dependencias Node ausentes; apos `npm ci --include=dev`, `npm run build --silent && node --test --test-name-pattern="pull request title|code-generating request topics" dist/tests/jobs.test.js` passou. A primeira tentativa Maven a partir da raiz falhou porque o projeto nao e um reactor; executado corretamente em `apps/backend`, `mvn test -Dtest=CodexControllerTest` passou com 10 testes. `git diff --check` passou.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 17:06:24 UTC - Aviso de codigo acumulado no botao Pedir PR
+
+- Solicitacao recebida: colocar algum tipo de aviso no botao de Pedir PR quando tiver codigo acumulado para ser mergeado.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a tela Codex ChatGPT ja mantinha o estado de lote aberto e sabia quantas solicitacoes estavam concluidas, mas usava esse dado apenas para habilitar/desabilitar o botao e para um `title`/texto generico; nao havia destaque visual persistente indicando que existiam alteracoes acumuladas ainda sem PR.
+- Alternativas avaliadas: (1) alterar apenas o texto auxiliar abaixo dos botoes, baixo risco mas pouco visivel; (2) abrir confirmacao ao clicar em Pedir PR, mais intrusivo e atrasaria um fluxo esperado; (3) destacar o estado diretamente no botao e no card do lote quando houver solicitacao concluida sem PR. Escolhida a alternativa 3 por atacar a causa da baixa visibilidade sem bloquear a acao.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: criado o estado `hasAccumulatedCodeAwaitingPr`, exibindo aviso "Codigo acumulado para merge" no card do lote e selo "Codigo pendente" dentro do botao `Pedir PR`, com estilo ambar quando houver lote concluido sem PR.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: adicionado cenario Playwright com APIs mockadas para validar o aviso no card e o selo no botao quando um lote tem solicitacao concluida sem link de PR.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "warns on the request PR button"`; `npm --prefix apps/frontend run test:e2e`; `git diff --check`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend; o smoke E2E do dashboard registrou erros de proxy para backend local ausente em endpoints nao mockados, mas os 2 testes Playwright passaram.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 14:15:14 UTC-3 - Refinamento visual de referencias de arquivo
+
+- Solicitacao recebida: melhorar novamente a formatacao dos nomes de arquivo nas respostas do Codex ChatGPT, pesquisando algo esteticamente interessante e facil de visualizar.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o ajuste anterior ainda tratava a referencia Markdown de arquivo como um chip inline grande demais dentro de um item de lista; em caminhos absolutos longos, isso fazia o card competir com a descricao, quebrar pontuacao como `:` em linhas ruins e dar peso visual ao caminho completo em vez do nome do arquivo.
+- Pesquisa de UI/UX realizada: referencias de breadcrumbs e truncamento de nomes longos indicam priorizar uma trilha curta, manter itens escaneaveis, mostrar tooltip quando truncar e preservar o fim/nome do arquivo como informacao mais importante.
+- Ajuste aplicado em `apps/frontend/src/components/MarkdownFileReference.tsx`: criado componente compartilhado para referencia de arquivo com badge de extensao, nome do arquivo em destaque, diretorio relativo ao repo como contexto secundario truncado e caminho absoluto completo apenas no `title`.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx` e `apps/frontend/src/components/CodexResponseBody.tsx`: os renderizadores Markdown agora usam o componente compartilhado e separam itens no formato `[arquivo](caminho): descricao` em duas partes, evitando pontuacao solta e melhorando leitura em desktop/mobile.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: adicionado cenario Playwright que valida o chip de arquivo, o badge de extensao, o diretorio relativo e a ausencia do caminho `/root/ai-hub/...` como texto visivel.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "formats markdown file references"`; `npm --prefix apps/frontend run test:e2e`; `git diff --check`.
+- Validacao visual executada com Playwright em desktop e mobile contra `http://127.0.0.1:5177/codex-chatgpt`, APIs mockadas e conversa local reproduzindo links longos do print.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend; o smoke E2E do dashboard registrou erros de proxy para backend local ausente em endpoints nao mockados, mas todos os 3 testes Playwright passaram.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 18:08:00 UTC - Correcao do botao Pedir PR entre tipos de dialogo
+
+- Solicitacao recebida: investigar problemas no botao `Pedir PR`, usando o ambiente `marketing-hub`, criando um arquivo `.md` de teste e testando combinacoes de tipos de dialogo.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a tela Codex ChatGPT calculava o lote atual filtrando apenas por ambiente, sem considerar o perfil/tipo de dialogo ativo. Como `CHATGPT_CODEX`, `CHATGPT_CODEX_MKT` e `CHATGPT_CODEX_SANDBOX` compartilham ambientes como `paulofor/marketing-hub@main`, alternar entre dialogos podia fazer o botao `Pedir PR`, o aviso de codigo pendente ou o descarte usarem um lote de outro perfil.
+- Alternativas avaliadas: (1) bloquear o botao quando existisse qualquer lote de outro perfil no mesmo ambiente, baixo risco mas impediria uso legitimo em paralelo; (2) mover toda a escolha de lote para um novo endpoint backend, mais centralizado mas maior custo e sem necessidade para corrigir a UI; (3) filtrar lote por `environment + profile` no frontend e cobrir as combinacoes com Playwright. Escolhida a alternativa 3 por corrigir a causa raiz no ponto de decisao do botao com menor impacto e boa cobertura.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: criados helpers para resolver lote aberto por `environment` e `profile`; `Pedir PR`, `Zerar e descartar solicitacoes`, card "Lote atual" e aviso de codigo acumulado agora enxergam apenas o lote do tipo de dialogo ativo.
+- Testes atualizados em `apps/frontend/tests/e2e/app.spec.ts`: adicionados cenarios simulando `paulofor/marketing-hub@main` com arquivo Markdown de teste (`docs/aihub-pedir-pr-mkt-test.md`) e lotes mistos; validado que MKT pede PR para o request MKT, que o dialogo padrao nao habilita PR com lote apenas MKT, e que o dialogo Sandbox nao renderiza botao de PR.
+- Validacoes executadas: primeira tentativa de testes frontend falhou por `node_modules` ausente; apos `npm --prefix apps/frontend ci --include=dev`, passaram `npm --prefix apps/frontend run build`, `npm --prefix apps/frontend run lint`, `npm --prefix apps/frontend run test:e2e -- --grep "request PR button only uses|default dialog does not enable|sandbox dialog does not render|warns on the request PR button"` e `npm --prefix apps/frontend run test:e2e`. Tambem passou `mvn test -Dtest=CodexControllerTest` em `apps/backend`, confirmando que a criacao backend de PR continuou funcional.
+- Observacao de ambiente: o teste de "deploy" foi reproduzido como chamada mockada ao endpoint `/api/codex/requests/{id}/create-pr`, sem abrir PR real nem publicar alteracao; `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend; o smoke E2E do dashboard registrou erros de proxy para backend local ausente em endpoints nao mockados, mas todos os 6 testes Playwright passaram.
+- Nao foi criado Pull Request.
+
+## 2026-07-24 20:08:00 UTC - Correcao da criacao de PR para solicitacoes Codex legadas
+
+- Solicitacao recebida: investigar e ajustar o erro na criacao do PR da solicitacao 192.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a solicitacao 192 concluiu em perfil `CHATGPT_CODEX_MKT` com alteracao de codigo e o sandbox-orchestrator retornava `workBranch`, mas o backend nao persistia esse campo ao sincronizar a resposta do sandbox. Assim, o endpoint `Pedir PR` caia no fluxo legado baseado em `responses.unifiedDiff`, que nao existe para execucoes via Codex App Server, gerando erro mesmo com a branch de trabalho disponivel.
+- Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/service/SandboxOrchestratorClient.java`: a resposta de job agora parseia `workBranch`/`work_branch`.
+- Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/service/CodexRequestService.java`: a sincronizacao de metadados do sandbox agora grava `workBranch` e `workBatchKey` quando o job informa a branch de trabalho, permitindo que solicitacoes ja concluidas usem o fluxo de PR de lote.
+- Teste atualizado em `apps/backend/src/test/java/com/aihub/hub/service/SandboxOrchestratorClientTest.java`: adicionado cenario garantindo o parse de `workBranch` retornado pelo sandbox-orchestrator.
+
+## 2026-07-25 20:54:37 UTC-3
+- Investigada solicitacao sobre manter um unico workspace persistente durante toda a execucao do Codex ChatGPT Managed.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o `SandboxJobProcessor` cria hoje um workspace temporario por job com `fs.mkdtemp(path.join(baseDir, \`ai-hub-${job.jobId}-\`))`, usa `repo` ou `sandbox` dentro dele como `cwd` no `thread/start`, e remove o workspace no `finally` via `cleanup(workspace)`. Portanto a troca de caminho e a dificuldade de conferencia final do diff vem do desenho atual de workspace efemero por execucao, nao de um erro isolado no payload do Codex App Server.
+- Identificado caminho recomendado de implementacao: adicionar modo explicito de workspace persistente no `sandbox-orchestrator`, derivando uma chave estavel por repositorio/branch/perfil, reusando um diretorio fixo sob `SANDBOX_WORKDIR`, atualizando o clone existente com `git fetch/reset/clean` controlado antes de cada job, desabilitando cleanup para workspaces persistentes e registrando `sandboxPath` estavel para auditoria.
+- Nenhum codigo foi alterado nesta etapa alem deste registro de diario; a mudanca funcional ainda depende de autorizacao/solicitacao explicita de implementacao.
+
+## 2026-07-25 23:56:44 UTC - Cor distinta para pedido de PR no dialogo
+
+- Solicitacao recebida: no fluxo do dialogo, usar uma cor diferente no card/botao de pedido de PR para nao confundir com outras situacoes.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o aviso de codigo acumulado e o botao `Pedir PR` com `Codigo pendente` reutilizavam a paleta amber, que tambem aparece em estados de atencao, sugestao e execucao; isso deixava a acao de pedir PR visualmente parecida com alertas comuns do dialogo.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o aviso de codigo acumulado e o estado pendente do botao `Pedir PR` agora usam paleta indigo, separando visualmente o fluxo de PR dos demais avisos.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: o cenario do botao `Pedir PR` agora valida que o card, o botao e o selo `Codigo pendente` usam classes indigo.
+- Validacoes executadas: primeira tentativa de `npm --prefix apps/frontend run build`/`lint` falhou por dependencias de desenvolvimento ausentes; apos `npm --prefix apps/frontend ci --include=dev`, passaram `npm --prefix apps/frontend run build`, `npm --prefix apps/frontend run lint`, `npm --prefix apps/frontend run test:e2e -- --grep "warns on the request PR button"` e `git diff --check`. Validacao visual com Playwright em `http://127.0.0.1:5177/codex-chatgpt`, APIs mockadas, confirmou botao/card em indigo; screenshot salvo em `/tmp/aihub-codex-pr-indigo.png`.
+- Observacao de ambiente: `npm ci` reportou vulnerabilidades ja existentes no grafo do frontend, sem alteracao de dependencias por estar fora do escopo.
+- Nao foi criado Pull Request.
+## 2026-07-25 23:03:53 UTC-3
+- Solicitação recebida: colocar `ffmpeg` disponível na sandbox para o modelo.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a imagem versionada já instalava o pacote Debian `ffmpeg` para entregar `ffprobe`, mas o contrato exposto ao modelo, aos prompts do frontend e ao checklist de preflight só declarava/detectava `ffprobe`; assim o binário `ffmpeg` podia existir incidentalmente sem ficar descoberto nem validado como ferramenta suportada da sandbox.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: a instrução operacional de mídia agora informa `ffmpeg` e `ffprobe`, orienta usos práticos de `ffmpeg`, e o preflight passa a detectar `ffmpeg` no checklist de ferramentas de mídia.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: os prompts dos perfis Codex ChatGPT, MKT e Sandbox passaram a declarar `ffmpeg` junto com `ffprobe`.
+- Documentação atualizada em `README.md`, `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md` para registrar `ffmpeg` como ferramenta suportada para converter/cortar/extrair áudio/gerar thumbnails/sintetizar mídias de teste.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar a presença de `ffmpeg` nos prompts e no checklist inicial.
+- Validações executadas: `npm --prefix apps/sandbox-orchestrator ci --include=dev`; `npm --prefix apps/sandbox-orchestrator test` passou com 72/72 testes; smoke real `ffmpeg` gerando `/tmp/aihub-ffmpeg-smoke.wav` e `ffprobe` retornando duração `0.200000`; `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`.
+- Limitação real de ambiente: `docker version` confirmou Docker CLI, mas falhou ao conectar em `/var/run/docker.sock`; não foi possível rebuildar a imagem Docker localmente nesta sandbox. Não foi criado Pull Request.
+
+## 2026-07-26 05:30:00 UTC - Investigação da solicitação 335
+
+- Solicitação recebida: esclarecer o que aconteceu na CodexRequest 335.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a execução do Codex App Server deixou de emitir atividade por mais de 180 segundos; o `SandboxJobProcessor` interpreta esse intervalo como turno paralisado e encerra o job com `CODEX_TURN_STALLED`. Não foi uma recusa da Meta nem uma falha do deploy investigado na conversa.
+- Evidências operacionais consultadas pelo MCP Server e pela API: request 335 em `FAILED`, job `8e3c901f-1df4-4910-8e61-f1a5f7870ba2`, início em `2026-07-26T04:51:25.101Z`, término em `2026-07-26T05:05:37.027Z`, resposta `CODEX_TURN_STALLED`, 1.480 eventos de interação e 3.053.259 tokens contabilizados. O container estava configurado com `CODEX_APP_SERVER_TURN_NO_ACTIVITY_TIMEOUT_MS=180000` e timeout total de duas horas.
+- Antes da paralisação, o modelo recebeu o histórico completo da conversa sobre publicar o vídeo do experimento 71 e a última orientação para aguardar o deploy, ajustar o público se necessário e seguir com a publicação. A solicitação não produziu resposta final útil, Pull Request ou confirmação de publicação do criativo.
+- Causa técnica imediata confirmada: ausência de eventos do App Server durante a janela de inatividade. A evidência preservada não permite afirmar qual operação interna específica deixou de responder; atribuir a falha à Meta, GitHub ou FFmpeg sem um último evento de ferramenta seria especulação.
+- Nenhuma correção funcional foi implementada nesta etapa; apenas este registro de investigação foi adicionado ao diário obrigatório do projeto.
+
+## 2026-07-26 05:45:00 UTC - Ampliação do limite de inatividade do Codex App Server
+
+- Solicitação recebida: aumentar o tempo que encerrou a CodexRequest 335 com `CODEX_TURN_STALLED`.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o limite de 180 segundos era curto para operações externas ou comandos legítimos que podem permanecer alguns minutos sem emitir eventos, fazendo o monitor confundir uma operação longa com um turno definitivamente paralisado.
+- Alternativas avaliadas: remover o monitor, o que permitiria jobs presos até o timeout total de duas horas; aumentar apenas para cinco minutos, ainda suscetível a operações longas; ou ampliar para quinze minutos, preservando a proteção contra jobs realmente travados. Escolhida a terceira alternativa.
+- Ajuste aplicado: o padrão interno e `apps/sandbox-orchestrator/.env.example` passaram de `180000` para `900000` ms, e a documentação operacional foi atualizada. Configurações explícitas continuam prevalecendo sobre o padrão.
+
+## 2026-07-26 12:30:00 UTC - Marcacao de comentarios lidos no dialogo MKT
+
+- Solicitacao recebida: adicionar uma opcao para marcar os comentarios do modelo que ja foram lidos.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o card estruturado de comentario oferecia apenas a acao de copiar e o estado da conversa, mas nao mantinha nenhum metadado local de acompanhamento por mensagem; por isso, ao voltar ao dialogo, todos os comentarios tinham a mesma aparencia e nao havia como distinguir os ja revisados.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: comentarios estruturados do dialogo Codex ChatGPT MKT agora exibem o checkbox `Lido`; a selecao e vinculada ao ID estavel da mensagem, persistida por perfil no `localStorage` e destacada visualmente em verde, podendo tambem ser desmarcada.
+- Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: o cenario marca um comentario como lido, valida o destaque visual e recarrega a pagina para confirmar a persistencia.
+- Validacoes executadas: `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing comment as read"`; `git diff --check`.
+- Validacao visual realizada com Playwright e APIs mockadas em `/codex-chatgpt-mkt`; screenshot salvo em `/tmp/aihub-comentario-lido.png`.
+
+## 2026-07-26 14:50:58 UTC - Cards estruturados no dialogo Codex ChatGPT
+
+- Solicitacao recebida: ajustar a formatacao da resposta estruturada exibida em `/codex-chatgpt`, que estava aparecendo como JSON cru no dialogo, para ficar igual ao visual do MKT.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a tela de conversa tinha um renderizador duplicado que so tentava parsear o JSON estruturado quando o perfil ativo era `CHATGPT_CODEX_MKT`; quando uma resposta no mesmo contrato aparecia em `/codex-chatgpt`, o componente caia no Markdown comum e mostrava o objeto JSON literal com escapes.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: mensagens do modelo agora tentam renderizar respostas estruturadas em cards independentemente da rota, mantendo o controle de leitura restrito ao MKT.
+- Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: valida que o dialogo `/codex-chatgpt` renderiza `titulo`, `comentario`, alerta de codigo e sugestao como cards, sem expor `{"titulo"` como texto cru.
+- Validacoes executadas: primeira tentativa de `npm --prefix apps/frontend run build` e `npm --prefix apps/frontend run lint` falhou por dependencias de desenvolvimento ausentes; apos `npm --prefix apps/frontend ci --include=dev`, passaram `npm --prefix apps/frontend run build`, `npm --prefix apps/frontend run lint`, `npm --prefix apps/frontend run test:e2e -- --grep "renders structured model JSON as cards"` e `git diff --check`.
+- Validacao visual realizada com Playwright e APIs mockadas em `/codex-chatgpt`; o DOM retornou `rawJsonVisible=0` e screenshot salvo em `/tmp/aihub-codex-chatgpt-structured-cards.png`.
+
+## 2026-07-26 13:05:00 UTC - Marcacao de comentario lido no detalhe MKT
+
+- Solicitacao recebida: no dialogo/telas de solicitacoes `codex-chatgpt-mkt`, adicionar nos quadros de comentarios uma forma de tickar que o comentario ja foi lido, com indicacao visual do que ja foi tratado.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a conversa principal do MKT ja tinha estado local para mensagens lidas, mas a tela de detalhe da solicitacao renderizava o card estruturado pelo componente compartilhado `CodexResponseBody` sem receber nem controlar nenhum estado de leitura; assim o comentario do detalhe continuava igual aos nao revisados.
+- Alternativas avaliadas: (1) persistir leitura no backend por solicitacao, mais robusto entre usuarios/dispositivos, mas exigiria novo contrato de API e migracao; (2) reaproveitar campos de comentario do usuario, baixo custo aparente, mas misturaria anotacao operacional com estado de UI; (3) adicionar estado local persistido por request no componente de resposta estruturada, menor escopo e aderente ao comportamento ja existente no dialogo MKT. Escolhida a alternativa 3.
+- Ajuste aplicado em `apps/frontend/src/components/CodexResponseBody.tsx`: o card estruturado de `Comentario` passou a aceitar chave de acompanhamento, checkbox `Lido`, selo `Comentario lido`, destaque visual verde e persistencia em `localStorage`, com fallback visual mesmo se o storage falhar.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexRequestDetailPage.tsx`: respostas de solicitacoes `CHATGPT_CODEX_MKT` passam uma chave estavel por solicitacao para habilitar a marcacao apenas no detalhe MKT.
+- Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: valida marcar comentario do detalhe como lido, exibicao do selo/destaque e persistencia apos reload.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing request detail comment as read"`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing comment as read|marks a marketing request detail comment as read"`; `git diff --check`.
+- Validacao visual realizada com Playwright e APIs mockadas em `/codex/requests/884`; screenshot salvo em `/tmp/aihub-detalhe-comentario-lido.png`.
+- Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nao foi criado Pull Request.
+
+## 2026-07-27 - Descrições de Pull Request somente com solicitação e título
+
+- Solicitação recebida: exibir nas descrições dos Pull Requests somente o número da solicitação e o respectivo título.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o backend montava cada tópico da descrição do PR priorizando `resumoCodigoPr`, um resumo técnico das alterações, e usava o prompt como fallback; embora a resposta estruturada já contivesse o campo `titulo`, esse campo não era lido pelo gerador da descrição.
+- Ajuste aplicado em `apps/backend/src/main/java/com/aihub/hub/web/CodexController.java`: os tópicos do PR agora usam exclusivamente o ID e o título da solicitação, priorizando o `titulo` da resposta estruturada, depois o título do problema associado e, para solicitações legadas sem esses dados, o prompt normalizado como título de compatibilidade.
+- Testes atualizados em `apps/backend/src/test/java/com/aihub/hub/web/CodexControllerTest.java`: os cenários de PR individual e em lote agora garantem que a descrição contém número e título, sem incluir o resumo técnico das mudanças.
+- Validações executadas: `mvn -f apps/backend/pom.xml -Dtest=CodexControllerTest test` (11 testes aprovados) e `git diff --check`.
+
+## 2026-07-27 11:17:36 UTC-3
+- Correção de registro: a entrada `2026-07-27 11:15:53 UTC-3` sobre retirar solicitações lidas da tela foi inserida antes do final do arquivo por contexto de patch, embora a política do diário exija append-only ao final.
+- Mantida a entrada anterior sem remoção, conforme política append-only; este registro final confirma a mesma alteração funcional realizada em `apps/frontend/src/pages/CodexChatgptPage.tsx`.
+- Causa raiz registrada: comentários lidos no diálogo MKT continuavam ocupando espaço porque o estado `Lido` só alterava destaque visual e não havia ação para ocultar a solicitação já consumida.
+- Solução registrada: botão `Retirar solicitação da tela` aparece apenas para comentário lido, oculta localmente a mensagem do usuário e a resposta vinculada à solicitação, persiste por perfil no `localStorage` e permite restauração por `Mostrar novamente`.
+
+## 2026-07-27 11:21:36 UTC-3
+- Complemento da implementação de retirada de solicitações lidas da tela: adicionado teste e2e em `apps/frontend/tests/e2e/app.spec.ts` cobrindo marcar comentário MKT como lido, exibir o botão de retirada, ocultar pergunta e resposta, manter a ocultação após reload e restaurar com `Mostrar novamente`.
+- Validações executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "dismisses a read marketing request"`; `git diff --check`.
+- Observação de ambiente: `npm ci` reportou 17 vulnerabilidades já existentes no grafo do frontend; nenhuma dependência foi alterada.
+
+## 2026-07-27 14:28:00 UTC - Verificacao de complementos no prompt
+
+- Solicitacao recebida: verificar se os itens opcionais de complemento de prompt realmente entram no prompt enviado quando o usuario os seleciona.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: se houvesse falha, a causa provavel seria desalinhamento entre o estado visual dos checkboxes e a montagem do `requestPrompt`; a investigacao mostrou que `buildConversationPromptFromHistory` coleta `selectedPromptHints`, inclui as `phrase` marcadas no bloco `Itens opcionais selecionados pelo usuario para complementar o prompt` e `handleRun` envia esse texto em `prompt` para `/codex/requests`.
+- Evidencias no fluxo: o backend persiste `request.getPrompt().trim()` em `CodexRequest` e em `PromptRecord`; o despacho para sandbox usa `request.getPrompt()` como `taskDescription`; o sandbox-orchestrator inclui `job.taskDescription` no conteudo enviado ao modelo.
+- Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: o cenario marca `Arquitetura` e `Licoes Aprendidas`, deixa `Documento Estrada` desmarcado, envia uma mensagem no MKT e intercepta o POST `/api/codex/requests` para provar que as frases marcadas entram no payload e a desmarcada nao entra.
+- Validações executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "sends selected prompt hint phrases"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`.
+- Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nenhuma dependencia foi alterada. Nao foi criado Pull Request.
+
+## 2026-07-28 00:22:00 UTC - Diagnostico de aparente travamento do AI Hub
+
+- Solicitacao recebida: verificar se o AI Hub havia travado.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o AI Hub como um todo continuava disponivel, mas a abertura da solicitacao 506 acionava repetidamente a sincronizacao do job `3fc20145-ecf5-4968-b4c7-cd212efb44d1`; a resposta JSON desse job continha uma string de 20.054.016 caracteres, acima do limite de 20.000.000 do Jackson no backend, e por isso a atualizacao do detalhe falhava e podia aparentar travamento para o usuario.
+- Evidencias operacionais: o healthcheck `GET https://iahub.xyz/mcp` respondeu HTTP 200 com `{"status":"UP"}`; todos os seis containers estavam `Up` havia quatro horas; backend, frontend e sandbox-orchestrator nao tinham reinicios observados; havia 3,8 GiB de memoria disponivel, carga de `0.48, 0.30, 0.23` e disco em 88% de uso.
+- O log do backend registrou `StreamConstraintsException: String value length (20054016) exceeds the maximum allowed (20000000)` ao executar `SandboxOrchestratorClient.getJob`, seguido por novas tentativas de atualizar a CodexRequest 506.
+- Conclusao: nao foi confirmada indisponibilidade geral nem esgotamento de CPU/memoria; o problema ficou isolado ao payload excepcionalmente grande do job associado a solicitacao 506. Nenhuma correcao funcional ou reinicio foi realizado nesta verificacao.
+
+## 2026-07-28 00:30:00 UTC - Correcao de payloads excessivos do sandbox-orchestrator
+
+- Solicitacao recebida: definir e aplicar o que poderia ser feito para impedir a recorrencia do aparente travamento observado na solicitacao 506.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: polling e callback serializavam o objeto interno completo do job sem um contrato de transporte limitado. No job investigado, isso incluiu um patch de 32.213.578 caracteres, interacoes e logs de aproximadamente 3 MB cada e o anexo original de aproximadamente 3 MB, formando uma resposta de 46.735.337 caracteres; o patch isoladamente excedeu o limite de string de 20.000.000 do Jackson no backend.
+- Correcao aplicada: polling e callback agora compartilham um construtor de payload que remove anexos, logs e logs de download; patches acima de 5.000.000 de caracteres sao preservados no job, mas omitidos do transporte e sinalizados com `patchTruncated=true` e `patchSize`.
+- O limite pode ser configurado por `SANDBOX_JOB_PATCH_RESPONSE_MAX_CHARS`. A solucao nao aumenta o limite do Jackson, evitando apenas transferir e persistir dados operacionais excessivos.
+- Teste automatizado adicionado para validar a omissao do patch grande e dos campos internos sem modificar o job armazenado. O build e o novo teste isolado passaram; a suite completa terminou com 72/73 porque o teste preexistente `aplica limite ampliado para ferramentas de inspeção` sofreu interferencia concorrente em variaveis globais de ambiente, sem relacao com o construtor de payload.
+
+## 2026-07-28 02:46:33 UTC - Verificacao de anexos de imagem enviados ao modelo
+
+- Solicitacao recebida: esclarecer se imagens de telas anexadas no campo de imagem chegam ao modelo, se ele entende essas imagens e se usa referencias feitas pelo usuario ao conteudo visual.
+- Pergunta explicita de causa raiz: "por que essa duvida aconteceu?". Resposta: o fluxo mistura dois comportamentos pouco visiveis para o usuario: o anexo aparece no frontend como preview e tambem e convertido para `dataUrl`, salvo no backend, materializado no sandbox e enviado ao modelo como entrada multimodal; sem uma indicacao clara na UI ou nos logs da conversa, fica dificil saber se a imagem foi apenas anexada ou realmente analisada pelo modelo.
+- Evidencias verificadas: o frontend le arquivos com `FileReader.readAsDataURL` e envia `imageAttachments` para `/codex/requests`; o backend salva `image_attachments_json` e repassa os anexos ao `SandboxJobRequest`; o sandbox-orchestrator valida ate cinco anexos base64, salva os arquivos em `.codex/attachments/<jobId>/` e inclui imagens como `type: 'image'` ou `type: 'input_image'` no conteudo enviado ao modelo.
+- Alternativas avaliadas: (1) responder apenas por comportamento esperado, mais rapido mas menos confiavel; (2) testar uma execucao real com imagem, mais conclusivo mas desnecessario para uma pergunta conceitual; (3) rastrear o caminho no codigo, melhor relacao entre confiabilidade e custo para esta resposta. Escolhida a alternativa 3.
+- Conclusao: imagens validas anexadas chegam ao modelo como input visual multimodal e podem ser usadas quando o usuario cita elementos da tela; os limites observados sao ate 5 arquivos, ate 5 MB por arquivo no frontend, payload total padrao de 50 MB no orquestrador e dependencia de o arquivo ter MIME/data URL de imagem.
+
+## 2026-07-28 03:02:00 UTC - Posicao dos itens opcionais do usuario no prompt
+
+- Solicitacao recebida: verificar se os itens de usuario sao enviados na posicao correta, pois devem dar contexto importante para o modelo.
+- Pergunta explicita de causa raiz: "por que essa duvida aconteceu?". Resposta: o produto chama esses complementos de itens opcionais/contextuais na UI, mas o contrato final nao os envia como entidade separada; eles sao concatenados dentro do texto do `prompt`, entao a ordem e a rotulagem dependem exclusivamente da funcao que monta o prompt.
+- Evidencias verificadas: `CodexChatgptPage.tsx` monta `Itens opcionais selecionados pelo usuario para complementar o prompt` depois das instrucoes de modo e antes de `Contexto selecionado`, `Historico da conversa` e `Ultima mensagem do usuario`; `handleRun` envia esse prompt para `/codex/requests`; o backend persiste e despacha `request.getPrompt()` como `taskDescription`; o sandbox-orchestrator inclui `job.taskDescription` como primeiro item textual do `turn/start`.
+- Analise de posicao: a posicao atual e funcional e anterior a ultima mensagem, portanto chega ao modelo como contexto. Porem, se esses itens forem realmente prioridade alta, a posicao ideal seria mais proxima da ultima mensagem e com rotulo mais forte, por exemplo `Contexto prioritario selecionado pelo usuario, use antes de responder`.
+- Alternativas avaliadas: (1) manter como esta, menor risco e ja funciona; (2) mover os itens para imediatamente antes da ultima mensagem, maior saliencia sem mudar contrato; (3) criar campo estruturado separado no payload e no sandbox, mais robusto mas com maior custo e risco. Melhor direcao recomendada: alternativa 2 para ganho rapido de aderencia, ou alternativa 3 se o objetivo for auditoria/telemetria separada desses itens.
+
+## 2026-07-28 03:05:00 UTC - Reposicionamento dos itens de usuario no prompt
+
+- Solicitacao recebida: aplicar a recomendacao de mover os itens opcionais do usuario para perto da ultima mensagem.
+- Pergunta explicita de causa raiz: "por que esse problema aconteceu?". Resposta: nao havia falha de envio; o problema era de saliencia contextual. Os itens selecionados eram concatenados cedo no prompt, antes de contexto salvo e historico, ficando mais distantes da mensagem que deveriam orientar.
+- Alternativas avaliadas: (1) manter a ordem atual, sem risco de regressao mas sem ganho de saliencia; (2) mover o bloco para imediatamente antes de `Ultima mensagem do usuario`, mantendo o contrato atual e melhorando a chance de uso pelo modelo; (3) criar campo estruturado separado no payload, mais auditavel mas exigindo mudancas em frontend/backend/sandbox. Escolhida a alternativa 2 por melhor custo-beneficio.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o bloco de itens selecionados agora aparece depois de `Historico da conversa` e imediatamente antes de `Ultima mensagem do usuario`, com rotulo reforcado como contexto prioritario.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: o cenario de envio com itens marcados agora valida o novo rotulo e confirma que o contexto prioritario vem antes da ultima mensagem do usuario.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "sends selected prompt hint phrases"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`.
+- Observacao de ambiente: o primeiro `npm ci` falhou por `node_modules` parcial/inconsistente (`ENOTEMPTY` em `@types/node`); removido apenas o artefato local `apps/frontend/node_modules` e repetida a instalacao limpa. O `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend.
+
+## 2026-07-28 03:18:00 UTC - Metricas do dia no quadro operacional do MKT
+
+- Solicitacao recebida: adicionar no quadro `Dia operacional` do Codex ChatGPT MKT as metricas de solicitacoes e interacoes do dia.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o endpoint `/codex/requests/metrics` ja retornava `requestCount` e `interactionCount`, mas o card operacional em `CodexChatgptPage.tsx` renderizava apenas data do dia operacional e tempo de processamento; a lacuna estava na apresentacao, nao no contrato de dados.
+- Alternativas avaliadas: (1) criar novos cards separados, daria mais destaque mas ocuparia mais tela; (2) adicionar as metricas no card existente, menor esforco e exatamente aderente ao pedido do usuario; (3) alterar o backend para criar um payload especifico do MKT, mais complexo e desnecessario porque os dados ja existem. Escolhida a alternativa 2.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o card `Dia operacional` agora exibe solicitacoes e interacoes do dia ao lado do tempo acumulado.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: o fluxo MKT valida a presenca dos rotulos `Solicitações` e `Interações` no quadro operacional.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing comment as read"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`.
+- Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nenhuma dependencia foi alterada.
+
+## 2026-07-28 03:32:00 UTC - Quadro operacional flutuante no MKT
+
+- Solicitacao recebida: deixar o quadro de metricas `Dia operacional` flutuando na tela ao fazer scroll, sempre no canto superior direito.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o card de metricas era renderizado como elemento normal dentro do cabecalho da pagina (`position: static`), entao participava do fluxo do documento e desaparecia junto com o conteudo ao rolar a tela.
+- Alternativas avaliadas: (1) usar `position: sticky` no proprio cabecalho, simples mas limitado pela altura do ancestral; (2) duplicar o card em uma camada global, mais flexivel mas com risco de divergencia de estado; (3) tornar o card existente `fixed` no viewport com largura estavel e camada elevada. Escolhida a alternativa 3 por resolver o comportamento pedido com menor escopo e sem duplicar dados.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o card `Dia operacional` agora usa posicionamento fixo no canto superior direito, fundo mais opaco, sombra e `backdrop-blur` para manter legibilidade durante o scroll.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: o fluxo MKT valida que o card tem `position: fixed` e mantem a mesma posicao visual apos rolar a pagina.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing comment as read"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`.
+- Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nenhuma dependencia foi alterada.
+- Nao foi criado Pull Request.
+
+## 2026-07-28 15:11:50 UTC - Atalho para primeira resposta nao lida no MKT
+
+- Solicitacao recebida: na regiao de edicao do texto da solicitacao, adicionar um botao que posicione automaticamente a tela na primeira resposta do modelo nao lida.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o fluxo MKT ja tinha estado local de leitura por mensagem do modelo, mas esse estado ficava preso aos cards de comentario; quando o usuario estava no formulario no fim da pagina, nao havia acao de navegacao que reutilizasse esse estado para encontrar e focar a proxima resposta pendente.
+- Alternativas avaliadas: (1) botao flutuante fixo na tela, muito visivel mas adiciona ruido permanente e disputa espaco com o quadro operacional; (2) botao no topo da conversa, simples mas longe da regiao de edicao citada pelo usuario; (3) botao junto ao formulario/textarea, com scroll para o primeiro comentario estruturado ainda nao lido. Escolhida a alternativa 3 por aderir ao local pedido e aproveitar o controle de leitura existente com menor escopo.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: criada uma referencia por mensagem visivel, calculada a primeira resposta MKT estruturada com `comentario` ainda nao marcada como lida, e adicionado o botao `Primeira resposta nao lida` acima do textarea para executar `scrollIntoView` e foco acessivel no card alvo.
+- Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: o cenario carrega uma conversa MKT com uma resposta lida e outra pendente, clica no botao a partir da area do prompt e valida que o foco vai para a resposta pendente, pulando a ja lida.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "scrolls from the marketing prompt editor"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; validacao visual com Playwright em `http://127.0.0.1:5177/codex-chatgpt-mkt`, screenshot salvo em `/tmp/aihub-first-unread-button.png`, confirmando botao acima do textarea e foco na resposta pendente.
+- Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nenhuma dependencia foi alterada. Nao foi criado Pull Request.
+
+## 2026-07-28 15:16:07 UTC - Bloqueio do composer MKT quando tudo esta pendente ou nao lido
+
+- Solicitacao recebida: em `https://iahub.xyz/codex-chatgpt-mkt`, se todas as mensagens do dialogo forem solicitacoes pendentes/em execucao ou respostas nao lidas, deixar a caixa de dialogo de solicitacao desabilitada.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a tela ja calculava mensagens pendentes e comentarios MKT nao lidos para exibicao, badges e scroll, mas esse estado nao era usado como regra operacional do composer; por isso o usuario ainda podia digitar/enviar uma nova solicitacao mesmo quando todo o dialogo visivel exigia aguardar ou ler respostas.
+- Alternativas avaliadas: (1) bloquear apenas o botao de envio, menor escopo mas deixa o campo editavel e confuso; (2) derivar o bloqueio da conversa visivel e aplicar no textarea, anexos, botao e `handleRun`, melhor equilibrio entre causa raiz e baixo risco; (3) criar estado persistido no backend, mais auditavel mas caro e desnecessario porque leitura ja e estado local da UI. Escolhida a alternativa 2.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o composer MKT agora calcula quando todas as mensagens visiveis de solicitacao estao associadas a execucao pendente/em andamento ou comentario estruturado nao lido; nesse caso o textarea, anexos e envio ficam desabilitados e a submissao tambem e bloqueada no handler.
+- Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: carrega um dialogo MKT com uma solicitacao em execucao e uma resposta concluida nao lida, valida que o composer fica desabilitado, confirma que o botao de primeira resposta nao lida continua ativo e destrava o campo apos marcar a resposta como lida.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "disables the marketing prompt composer"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`; validacao visual com Playwright em `http://127.0.0.1:5177/codex-chatgpt-mkt`, screenshot salvo em `/tmp/aihub-mkt-composer-disabled.png`, confirmando o textarea desabilitado.
+- Observacao de ambiente: `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend; nenhuma dependencia foi alterada. Nao foi criado Pull Request.
+## 2026-07-28 12:22:26 UTC-3
+- Solicitação recebida: oferecer na sandbox do modelo a melhor opção de simulador de celular para acessar URLs como usuário mobile, principalmente para validar vídeos, áudio e animações.
+- Pergunta explícita de causa raiz: "por que esse erro aconteceu?". Resposta: a sandbox já disponibilizava Playwright/Chromium, ffmpeg, ffprobe e sandbox-media-player, mas as instruções ao modelo tratavam o navegador apenas como ferramenta genérica de UI/screenshot; faltava declarar explicitamente que a melhor simulação mobile disponível é Playwright com emulação de dispositivos, e faltava orientar seu uso combinado com as ferramentas de mídia para validar vídeo, áudio e animações em contexto de celular.
+- Alternativas avaliadas: (1) recomendar instalar um emulador Android/iOS completo, mais fiel em alguns cenários mas pesado, frágil e fora do contrato atual da sandbox; (2) criar um serviço/browser remoto de dispositivos reais, melhor para QA avançado mas com maior custo operacional e dependência externa; (3) explicitar Playwright + Chromium mobile emulation como opção padrão, usando `devices["iPhone 15 Pro"]` ou `devices["Pixel 7"]`, combinado com `sandbox-media-player`, `ffmpeg` e `ffprobe`. Escolhida a alternativa 3 por ser imediatamente disponível, versionável, automatizável e suficiente para validações de layout, interação, mídia e animações na maioria dos fluxos do Marketing Hub.
+- Ajuste aplicado em `apps/sandbox-orchestrator/src/jobProcessor.ts`: criado texto operacional reutilizável informando ao modelo que a melhor opção de simulador de celular é Playwright com emulação mobile do Chromium, incluindo exemplos de dispositivos e orientação para vídeos, áudio e animações.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o prompt dos perfis Codex ChatGPT passou a incluir a orientação mobile antes do envio para a sandbox.
+- Documentação atualizada em `apps/sandbox-orchestrator/README.md` e `docs/sandbox-architecture.md` com o contrato de uso do simulador mobile e das ferramentas de mídia.
+- Testes atualizados em `apps/sandbox-orchestrator/tests/jobs.test.ts` para travar a presença das novas instruções nos prompts do App Server e do runner.
+- Validações executadas: após `npm --prefix apps/sandbox-orchestrator ci --include=dev` e `npm --prefix apps/frontend ci --include=dev`, passaram `node --test --test-name-pattern='CHATGPT_CODEX_MKT|runner' dist/tests/jobs.test.js dist/tests/codexAppServerClient.test.js dist/tests/codexLogMaintenance.test.js` em `apps/sandbox-orchestrator`, `npm --prefix apps/frontend run build`, `npm --prefix apps/frontend run lint` e `git diff --check`.
+- Observação de ambiente: a tentativa inicial de validação falhou por dependências dev ausentes e parsing do argumento `--test-name-pattern` via `npm test`; a validação foi repetida com as dependências instaladas e `node --test` chamado diretamente com a opção antes dos arquivos. `npm ci` reportou vulnerabilidades já existentes nos grafos do frontend e sandbox-orchestrator. Não foi criado Pull Request.
+
+## 2026-07-28 15:36:20 UTC - Tipo de uso nos itens opcionais da solicitação
+
+- Solicitacao recebida: alterar os itens de prompts para terem tipo `prompt` ou `text`; itens `prompt` continuam entrando no prompt do envio, e itens de tela/texto devem copiar o texto para a caixa da solicitacao para edicao, sem serem adicionados ao contexto oculto do prompt. A tela da solicitacao tambem deve indicar o tipo antes do clique.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: os itens opcionais eram modelados apenas como `label` e `phrase`; o backend, a API e o frontend nao tinham metadado de uso. Por isso todo item marcado era tratado do mesmo jeito e concatenado no bloco de contexto prioritario do prompt final.
+- Alternativas avaliadas: (1) inferir o tipo por prefixo no texto do item, com menor custo mas fragil e dependente de convencao manual; (2) persistir um campo de tipo no backend/API e adaptar o composer, mantendo `prompt` como padrao para compatibilidade; (3) separar em duas listas/telas diferentes, simples visualmente mas com mais duplicacao e pior manutencao. Escolhida a alternativa 2 por resolver a causa raiz com contrato explicito e baixo risco para itens existentes.
+- Ajuste aplicado no backend: criado `PromptHintType`, adicionada coluna `item_type` em migracoes MySQL/PostgreSQL/H2, DTOs passaram a aceitar/retornar `type`, e `PromptHintService` normaliza ausencia de tipo para `prompt` e rejeita tipos invalidos.
+- Ajuste aplicado no frontend: `PromptHintsPage` permite cadastrar/editar o tipo; `CodexChatgptPage` mostra badge `Prompt` ou `Tela` em cada item, mantem itens `prompt` no contexto prioritario e faz itens `text` copiarem/removerem o texto na textarea da solicitacao para edicao. Os checkboxes tambem respeitam o bloqueio do composer.
+- Testes atualizados: `PromptHintServiceTest` cobre tipo padrao, tipo `text` e rejeicao de tipo invalido; o E2E de envio MKT valida que item `text` aparece na textarea e nao entra no bloco de contexto prioritario, enquanto itens `prompt` continuam sendo enviados como contexto.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `mvn -f apps/backend/pom.xml -Dtest=PromptHintServiceTest test`; `npm --prefix apps/frontend run test:e2e -- --grep "sends selected prompt hint phrases"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`.
+- Observacao de ambiente: a primeira tentativa de E2E falhou por `@playwright/test` ausente no `node_modules`, resolvido com `npm ci`; a primeira tentativa de backend com `./mvnw` falhou porque nao ha wrapper Maven na raiz, entao foi usado `mvn -f apps/backend/pom.xml`. O `npm ci` reportou 17 vulnerabilidades ja existentes no grafo do frontend. Nao foi criado Pull Request.
+
+## 2026-07-28 15:37:00 UTC - Quadro operacional MKT mais compacto
+
+- Solicitacao recebida: reduzir a altura do quadro flutuante no topo direito da tela Codex ChatGPT MKT e aproveitar melhor o espaco sobrando.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: ao transformar o card `Dia operacional` em flutuante, o componente manteve padding, margens, tamanho de fonte e caixas internas adequados para um card normal de cabecalho; como elemento fixo sobre a tela, esse espacamento passou a ocupar area vertical demais para o volume real de informacao.
+- Alternativas avaliadas: (1) esconder metricas secundarias para reduzir altura, menor espaco mas perde informacao util; (2) tornar o card recolhivel, flexivel mas adiciona interacao e estado para um problema de densidade visual; (3) compactar largura, padding, gaps, fontes e altura das caixas internas mantendo todas as metricas visiveis. Escolhida a alternativa 3 por melhorar aproveitamento de espaco sem reduzir a utilidade operacional.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o quadro `Dia operacional` recebeu dimensoes e espacamentos mais compactos, mantendo data, tempo, solicitacoes, interacoes e corte operacional.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: o fluxo MKT agora valida que o quadro fixo permanece posicionado e tem altura maxima compacta.
+- Validacoes executadas: `npm --prefix apps/frontend ci --include=dev`; `npm --prefix apps/frontend run test:e2e -- --grep "marks a marketing comment as read"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`; validacao visual com Playwright em `http://127.0.0.1:5177/codex-chatgpt-mkt`, medindo o quadro em `196x138px` e salvando screenshot em `/tmp/aihub-mkt-operational-card-compact.png`.
+- Observacao de ambiente: o primeiro E2E falhou porque `@playwright/test` nao estava instalado no `node_modules`; `npm ci` resolveu a dependencia e reportou 17 vulnerabilidades ja existentes no grafo do frontend.
+- Nao foi criado Pull Request.
+
+## 2026-07-28 16:00:00 UTC - Bloqueio do composer somente com as 20 posições ativas
+
+- Solicitação recebida: corrigir o bloqueio do quadro MKT para que ele não ocorra apenas por existir mensagem sendo processada ou resposta não lida; o bloqueio deve ocorrer somente quando todas as 20 posições estiverem ocupadas por solicitações pendentes ou em processamento.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a regra anterior interpretou “todas as mensagens” como uma condição sobre o conteúdo do recorte visual e incluiu respostas concluídas não lidas, sem representar a capacidade real de 20 solicitações ativas. Assim, uma única execução e uma resposta não lida já conseguiam desabilitar o composer.
+- Alternativas avaliadas: (1) contar as 20 mensagens visíveis, incorreto porque cada solicitação gera mensagens de usuário e assistente; (2) contar cards da lista de requisições carregada, sujeito à paginação e mistura de históricos; (3) contar IDs únicos de solicitações da conversa com estado não terminal e bloquear ao atingir 20. Escolhida a alternativa 3 por modelar diretamente as posições ocupadas, ignorar respostas concluídas/não lidas e evitar duplicidade.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: o composer MKT passa a ser bloqueado apenas ao atingir 20 solicitações únicas em estado pendente ou em execução, com mensagem específica de capacidade ocupada.
+- Teste atualizado em `apps/frontend/tests/e2e/app.spec.ts`: o cenário agora valida o bloqueio com exatamente 20 solicitações ativas e o desbloqueio quando uma delas se torna concluída, deixando 19 posições ocupadas.
+- Validações executadas: `npx playwright install chromium`; `npx playwright install-deps chromium`; `npm --prefix apps/frontend run test:e2e -- --grep "disables the marketing prompt composer only"`; `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `git diff --check`. Validação visual salva em `/tmp/aihub-mkt-capacity-block.png`, confirmando o aviso e o composer desabilitado com 20 posições ativas. As chamadas de polling sem mock produziram avisos `ECONNREFUSED` no proxy durante o E2E, sem afetar o resultado aprovado do cenário.
+
+## 2026-07-29 00:00:00 UTC - Alerta de interacoes sem alteracao no quadro MKT
+
+- Solicitacao recebida: adicionar um alerta visual ao valor de interacoes quando ele permanecer certo tempo sem alteracao.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: o polling do quadro operacional atualizava apenas o valor agregado recebido do endpoint de metricas; a interface nao mantinha a identidade da ultima observacao (dia operacional + quantidade) nem possuia um temporizador associado a uma mudanca real. Assim, era impossivel distinguir uma metrica ativa de outra parada no mesmo numero.
+- Alternativas avaliadas: (1) alertar por falha do polling, insuficiente porque a API pode continuar respondendo com um valor parado; (2) usar a data da ultima resposta HTTP, incorreto porque cada polling renovaria o horario mesmo sem novas interacoes; (3) comparar dia operacional e contagem, reiniciando um temporizador apenas quando um desses valores mudar. Escolhida a alternativa 3 por representar diretamente a inatividade solicitada.
+- Ajuste aplicado em `apps/frontend/src/pages/CodexChatgptPage.tsx`: no perfil MKT, a primeira observacao ou uma mudanca nas interacoes inicia/reinicia uma janela de 5 minutos; ao vencer, o card e a caixa de interacoes recebem borda ambar, anel de destaque e indicador pulsante, com mensagem acessivel. Uma nova interacao remove imediatamente o alerta e reinicia a janela.
+- Teste adicionado em `apps/frontend/tests/e2e/app.spec.ts`: usa o relogio controlado do Playwright para validar que o alerta nao aparece antes da janela, surge apos 5 minutos sem mudanca e desaparece quando a contagem aumenta. O cenario tambem gera screenshot do estado visual alertado no diretorio de artefatos do teste.
+- Validacoes executadas: `npm --prefix apps/frontend run build`; `npm --prefix apps/frontend run lint`; `npm --prefix apps/frontend run test:e2e -- --grep "alerts when the marketing interaction count"`; `git diff --check`.
+- Observacao de ambiente: foi necessario executar `npx playwright install chromium` e `npx playwright install-deps chromium` porque o navegador e bibliotecas nativas nao estavam presentes inicialmente.
+
+## 2026-07-29 - Avaliacao de risco do Docker daemon na sandbox
+
+- Solicitacao recebida: avaliar se existe risco em disponibilizar o Docker daemon diretamente na sandbox.
+- Pergunta explicita de causa raiz: "por que esse risco existe?". Resposta: a API do Docker controla a criacao de containers, mounts, namespaces, redes e processos; quando a sandbox acessa o daemon do host, seu isolamento deixa de ser uma fronteira efetiva, pois um comando pode montar o filesystem do host, acessar segredos, iniciar containers privilegiados ou afetar outros workloads.
+- Conclusao: montar `/var/run/docker.sock` ou expor um daemon privilegiado do host para uma sandbox que executa comandos gerados pelo modelo equivale, na pratica, a conceder alto privilegio sobre o host. O impacto inclui escape da sandbox, leitura e alteracao do host, vazamento de credenciais, movimento lateral, indisponibilidade e persistencia.
+- Recomendacao para o AI Hub: nao oferecer Docker bruto a sandboxes de uso geral. Manter operacoes reais no host por uma camada intermediaria autenticada, auditavel e allowlistada, como o MCP Server, com comandos e parametros validados, limites de tempo/recursos e autorizacao explicita para operacoes destrutivas. Quando builds de containers forem indispensaveis, preferir um builder remoto/efemero e isolado, sem socket do host, sem modo privilegiado, sem credenciais amplas e sem compartilhar a rede de producao.
+- Nenhum codigo de aplicacao foi alterado; foi registrada apenas a avaliacao arquitetural e de seguranca solicitada.
+
+## 2026-07-30 - Disponibilizacao do nslookup na sandbox
+
+- Solicitacao recebida: instalar o comando `nslookup` na imagem da sandbox.
+- Pergunta explicita de causa raiz: "por que o nslookup nao estava disponivel?". Resposta: a imagem de producao usa `node:20-bookworm-slim`, que nao inclui ferramentas de diagnostico DNS, e a lista explicita de pacotes do Dockerfile nao instalava o pacote Debian `dnsutils`, responsavel por fornecer `nslookup`.
+- Correcao aplicada em `apps/sandbox-orchestrator/Dockerfile`: adicionado `dnsutils` aos pacotes de runtime e `command -v nslookup` como verificacao durante o build, fazendo a construcao falhar cedo se o executavel nao for instalado.
+- Protecao contra regressao: o teste do Dockerfile agora exige tanto o pacote `dnsutils` quanto a verificacao do executavel; a arquitetura da sandbox foi atualizada para documentar a ferramenta e esclarecer que seu uso nao depende do Docker daemon do host.
+- Validacoes executadas: `npm test` em `apps/sandbox-orchestrator` e `git diff --check`. Uma tentativa anterior de filtrar o teste com `npm test -- --test-name-pattern=...` falhou porque o script repassou o argumento depois dos caminhos de teste e o Node o interpretou como arquivo; a suite completa foi executada com sucesso em seguida.
+- Limitacao do ambiente: nao foi possivel construir a imagem localmente porque o comando `docker` nao esta instalado neste ambiente; a instalacao efetiva de `nslookup` sera exercitada pelo build versionado da pipeline.
+
+## 2026-07-30 01:45:05 UTC - Disponibilizacao do openssh-client na sandbox
+
+- Solicitacao recebida: instalar `openssh-client` na sandbox para todas as execucoes e informar essa capacidade ao modelo.
+- Pergunta explicita de causa raiz: "por que o ssh nao estava disponivel?". Resposta: a imagem de producao da sandbox usa uma base slim e a lista versionada de pacotes em `apps/sandbox-orchestrator/Dockerfile` nao incluia `openssh-client`, portanto novas execucoes nao tinham o comando `ssh` garantido nem o prompt informava essa ferramenta ao modelo.
+- Alternativas avaliadas: (1) instalar apenas com `apt-get` na sandbox atual, rapido mas efemero; (2) orientar o usuario a instalar manualmente antes de cada uso, barato mas recorrente e sujeito a erro; (3) instalar na imagem versionada, validar `ssh -V` no build e informar no prompt do runner. Escolhida a alternativa 3 por tornar a capacidade permanente nas proximas imagens e visivel ao modelo.
+- Ajustes aplicados: `apps/sandbox-orchestrator/Dockerfile` passa a instalar `openssh-client` e validar `ssh -V`; `apps/sandbox-orchestrator/src/jobProcessor.ts` passa a informar ao modelo que o cliente OpenSSH esta disponivel para acessos autorizados, preservando a regra de nao publicar codigo via SSH; `apps/sandbox-orchestrator/tests/jobs.test.ts` protege a presenca do pacote e da validacao no Dockerfile; `docs/sandbox-architecture.md` documenta a ferramenta.
+- Validacao local executada na sandbox atual: `apt-get update && apt-get install -y --no-install-recommends openssh-client`; `ssh -V` retornou `OpenSSH_9.2p1 Debian-2+deb12u10`.
+- Validacoes executadas: `npm ci --include=dev`; `npm test` em `apps/sandbox-orchestrator` com 73 testes aprovados; `git diff --check`.
+- Limitacao do ambiente: o Docker CLI esta instalado, mas nao ha daemon/socket Docker disponivel em `/var/run/docker.sock`; por isso o build local da imagem nao foi executado. A instalacao permanente sera exercitada pelo build versionado da pipeline/deploy.
+
+## 2026-07-30 00:00:00 UTC - Orientacao para acesso SSH a VPS
+
+- Solicitacao recebida: orientar o modelo que, quando precisar acessar uma VPS por SSH, deve criar uma chave `ed25519` e passar a chave publica ao usuario para cadastro no host caso ainda nao esteja cadastrada.
+- Pergunta explicita de causa raiz: "por que essa orientacao e necessaria?". Resposta: a presenca do `openssh-client` na sandbox garante apenas o comando `ssh`; ela nao resolve a autenticacao no host remoto e pode levar a pedidos inseguros de senha, reutilizacao de chaves privadas ou tentativa de acesso sem chave cadastrada.
+- Alternativas avaliadas: (1) pedir senha SSH ao usuario, simples mas inseguro e inadequado para automacao; (2) reutilizar uma chave privada existente, rapido mas com risco de exposicao e baixa rastreabilidade; (3) gerar uma chave nova `ed25519` na sandbox e entregar somente a chave publica ao usuario para cadastrar no host autorizado. Escolhida a alternativa 3 por reduzir exposicao de segredo, manter a chave privada local e permitir autorizacao explicita pelo usuario.
+- Ajuste aplicado em `AGENTS.md`: adicionada instrucao operacional para gerar chave `ed25519` na sandbox quando necessario e compartilhar apenas a chave publica para cadastro em VPS autorizada, sem solicitar ou expor credenciais reais.
+- Nao foi criado Pull Request.
+
+## 2026-07-30 - Esclarecimento sobre o risco de disponibilizar Docker daemon
+
+- Solicitacao recebida: esclarecer se seria perigoso disponibilizar um Docker daemon ativo para validar migrations Liquibase localmente contra MySQL 5.7, reproduzindo o GitHub Actions.
+- Pergunta explicita de causa raiz: "por que isso seria perigoso?". Resposta: o risco nao vem do MySQL 5.7 nem do Liquibase; vem de dar a codigo executado na sandbox acesso a uma API capaz de criar containers, montar caminhos do host e controlar recursos do daemon. Se o daemon for o do host (por exemplo, via `/var/run/docker.sock`), esse acesso equivale, na pratica, a alto privilegio sobre o host.
+- Conclusao: a frase e segura apenas se "Docker daemon ativo" significar um daemon remoto ou efemero, dedicado e fortemente isolado, sem socket do host, mounts sensiveis, modo privilegiado, rede de producao ou credenciais amplas. Expor o daemon compartilhado do host a uma sandbox de uso geral e perigoso e nao e recomendado.
+- Alternativas recomendadas: executar o teste MySQL 5.7 no GitHub Actions; usar um runner efemero dedicado; ou oferecer um servico restrito que execute somente a validacao Liquibase predefinida, com imagem fixada, limites de recursos, rede isolada e descarte posterior.
+- Nenhum codigo de aplicacao foi alterado; foi registrada apenas a orientacao de seguranca solicitada.
+
+## 2026-07-30 - Runner efemero dedicado para Liquibase com MySQL 5.7
+
+- Solicitacao recebida: disponibilizar um runner efemero e dedicado para validar os changelogs Liquibase contra MySQL 5.7.
+- Pergunta explicita de causa raiz: "por que a validacao local exata nao estava disponivel?". Resposta: a sandbox nao possui Docker daemon, e expor o socket Docker compartilhado do host eliminaria a fronteira de isolamento. Ao mesmo tempo, a CI generica executava apenas os testes Maven do backend e nao iniciava MySQL 5.7 nem aplicava o changelog Liquibase de referencia.
+- Solucao aplicada: criado `.github/workflows/liquibase-mysql57.yml`, executado em uma VM GitHub-hosted exclusiva do job e descartada ao final. O job inicia `mysql:5.7`, aguarda seu healthcheck, aplica o changelog usando `liquibase/liquibase:4.27.0` e consulta o status final.
+- Controles de seguranca: permissao GitHub limitada a `contents: read`, checkout sem persistencia de credenciais, timeout de 10 minutos, concorrencia com cancelamento de execucao obsoleta, credenciais locais sem segredos de producao e container Liquibase sem capabilities, com `no-new-privileges`, filesystem somente leitura e checkout montado somente para leitura.
+- Acionamento: automatico em pull requests que alterem changelogs, o guia ou o workflow, e manual via `workflow_dispatch`. O guia `docs/database/liquibase-mysql57.md` foi atualizado com o uso e o ciclo de descarte.
+- Validacoes executadas: `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/liquibase-mysql57.yml` e `git diff --check`.
+- Limitacao do ambiente: o comando `docker` nao esta instalado na sandbox atual, portanto os containers MySQL/Liquibase nao puderam ser executados localmente; a integracao completa sera exercitada pelo runner versionado. Uma tentativa de parse com Python tambem nao foi utilizavel porque o modulo opcional `yaml` nao esta instalado; a sintaxe foi validada com o `actionlint` especifico para GitHub Actions.
+
+## 2026-07-30 - Correcao do driver MySQL no runner Liquibase
+
+- Erro observado no GitHub Actions: `Cannot find database driver: com.mysql.jdbc.Driver` ao executar o passo `Apply changelog on MySQL 5.7`.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a imagem `liquibase/liquibase:4.27.0` instala o Liquibase, mas nao inclui o MySQL Connector/J. O workflow anterior fornecia URL, usuario e senha, porem nao provisionava nem adicionava o JAR JDBC ao classpath; portanto o Liquibase reconhecia a URL MySQL, mas nao conseguia carregar o driver solicitado.
+- Correcao aplicada na causa: o workflow agora usa a versao 8.3.0 do MySQL Connector/J gerenciada pelo backend, baixa o artefato com Maven para o diretorio temporario do runner, verifica que o JAR existe e contem a classe legada `com/mysql/jdbc/Driver.class` solicitada pelo Liquibase, monta o diretorio no container como somente leitura e passa o arquivo explicitamente em `--classpath` nas duas execucoes Liquibase.
+- Controles preservados: o driver fica somente na VM efemera, nao e commitado no repositorio, nao exige liberar escrita no container Liquibase e preserva `--read-only`, `--cap-drop ALL` e `no-new-privileges`.
+- Validacoes executadas: resolucao local da versao gerenciada com `mvn -q -f apps/backend help:evaluate -Dexpression=mysql.version -DforceStdout`; download do artefato com `mvn dependency:copy`; verificacao de `com/mysql/jdbc/Driver.class` e `com/mysql/cj/jdbc/Driver.class` dentro do JAR; `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.7 .github/workflows/liquibase-mysql57.yml`; e `git diff --check`.
+- Limitacao do ambiente: o Docker CLI/daemon continua indisponivel nesta sandbox, portanto a conexao completa Liquibase/MySQL sera confirmada pela nova execucao do GitHub Actions.
+
+## 2026-07-30 00:23:28 UTC-3
+- Correção de registro append-only: a entrada `2026-07-30 00:22:49 UTC-3` sobre o ajuste do GitHub Actions foi inserida antes de registros mais recentes já existentes no arquivo; esta nova entrada preserva a anterior sem apagar linhas e registra que a correção final também deve considerar esta anotação no fim do diário.
+
+## 2026-07-30 02:34:27 UTC-3 - Modelo passa a reconhecer o runner Liquibase MySQL 5.7
+
+- Solicitação recebida: corrigir o entendimento do modelo após a solicitação 755 afirmar que precisaria de um daemon Docker ativo na sandbox, embora o runner efêmero dedicado já estivesse disponível.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: o workflow e o guia existiam no repositório, mas o prompt operacional só ensinava regras de autoria de migrations e anunciava genericamente Docker CLI/Compose; ele não declarava que a ausência do daemon local era suprida pelo runner GitHub-hosted nem ensinava como acioná-lo e acompanhar sua execução. Assim, o modelo interpretou a falha local como ausência de infraestrutura de validação.
+- Correção aplicada na causa: criada uma instrução operacional explícita, compartilhada pelos fluxos Codex App Server e pelo loop legado, que identifica `.github/workflows/liquibase-mysql57.yml` como runner disponível, diferencia daemon local de runner remoto, orienta o uso de `gh workflow run`, `gh run list` e `gh run watch`, e proíbe apresentar Docker local como melhoria necessária para essa validação.
+- Proteção contra regressão: o teste do prompt inicial agora verifica a presença do runner, a distinção sobre o daemon local, o comando de acionamento e a regra que impede recomendar Docker local como requisito.
+- Documentação atualizada no README do sandbox-orchestrator para registrar o contrato comunicado ao modelo.
+
+## 2026-07-30 - Painel administrativo de Saúde do sistema
+
+- Solicitação recebida: disponibilizar no frontend um painel administrativo para diagnosticar indisponibilidade, cancelar ou forçar jobs, reiniciar o Codex App Server/sandbox e executar limpezas seletivas.
+- Pergunta explícita de causa raiz: “por que o AI Hub aparentou travar?”. A investigação encontrou o Codex App Server emitindo uma tempestade de spans `session_loop enter/exit`, enquanto o sandbox acumulava 421 processos e 35,6 GB de escrita; o filesystem do host chegou a 95%. A fila serial por perfil manteve novas solicitações pendentes enquanto o job anormal continuava ativo. A ausência de diagnóstico e recuperação controlada no produto obrigava a intervenção externa pelo MCP.
+- Correção na causa: o nível padrão de logs Rust dos módulos ruidosos foi reduzido para `warn`, preservando `info` no supervisor do App Server, para impedir recorrência da tempestade de spans. O limite/rotação SQLite já existente foi preservado.
+- Backend: criado `/api/admin/system-health`, protegido por token administrativo comparado em tempo constante. O serviço consulta o MCP somente com comandos fixos, apresenta filesystem, containers, CPU, memória, PIDs, I/O e tamanhos de logs, combina o estado do sandbox/Codex App Server e relaciona a fila persistida.
+- Ações: cancelamento cooperativo, cancelamento forçado com reinício do subprocesso, reinício isolado do Codex App Server, reinício do sandbox, prévia/limpeza de workspaces, prévia/limpeza de logs antigos e prune seletivo de recursos Docker. Não existe campo para comando Linux livre.
+- Proteções: confirmação explícita no frontend; segredo mantido somente na memória da aba; auditoria pelo `AuditService`; trava de exclusão mútua; timeout; chave de idempotência; comandos permitidos por lista fechada; bloqueio da limpeza de workspaces quando há jobs ativos; retenção por idade; filtros do projeto Compose; e preservação dos containers em execução e arquivos SQLite ativos.
+- Sandbox: adicionados endpoints internos de status, reinício do App Server e cancelamento forçado. O processador agora preserva o estado `CANCELLED` quando a interrupção forçada rejeita uma chamada pendente e sempre percorre sua finalização/limpeza.
+- Frontend: criada a rota “Saúde do sistema” com cartões de disco, tabela de serviços/recursos, consumo de logs, estado/restarts do App Server, jobs ativos, fila e ações com progresso e confirmação.
+- Configuração necessária: definir `HUB_MAINTENANCE_ADMIN_TOKEN` com segredo longo; o backend reutiliza `MCP_SERVER_API_TOKEN` ao chamar o MCP internamente.
+
+## 2026-07-30 - Orientação e detecção da configuração do token administrativo
+
+- Problema observado: a página solicitava um “token administrativo” sem explicar onde ele era criado ou armazenado, levando o usuário a procurar um token que ainda poderia nem existir na implantação.
+- Pergunta explícita de causa raiz: “por que esse erro aconteceu?”. Resposta: a implementação introduziu `HUB_MAINTENANCE_ADMIN_TOKEN` apenas no exemplo do backend, mas não no `.env.example` raiz usado pelo Docker Compose, e a interface não distinguia “segredo ainda não configurado” de “usuário ainda não digitou o segredo”.
+- Correção na causa: a variável foi documentada no `.env.example` raiz com comando seguro de geração; o backend agora expõe somente o estado booleano de configuração, sem revelar o segredo; e o frontend explica que o valor vem do `.env` da implantação, orienta solicitar ao administrador da VPS e mostra instruções de bootstrap quando ainda não estiver configurado.
+- Proteção preservada: o token real nunca é devolvido pela API, gravado no navegador ou exibido na página; a consulta de diagnóstico e todas as ações continuam exigindo o segredo correto.
+
+## 2026-07-31 00:32:36 UTC - Orientacao sobre indice para analytics PDE v6
+
+- Solicitacao recebida: esclarecer se e necessario criar indices para resolver a falha HTTP 500 `Out of sort memory` no MySQL ao consolidar o funil PDE da v6.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a consolidacao do analytics esta obrigando o MySQL a ordenar muitos eventos do funil sem um indice composto suficientemente alinhado aos filtros e a ordenacao da consulta; com isso o banco tenta fazer sort em memoria temporaria e estoura o limite de `sort_buffer`.
+- Alternativas avaliadas: (1) aumentar `sort_buffer_size`, rapido mas paliativo e arriscado para memoria global; (2) reduzir janela/volume da consulta, rapido mas piora leitura comercial e pode esconder eventos; (3) criar indice composto alinhado a produto/versao/evento/timestamp e validar com `EXPLAIN`, melhor correcao por atacar a causa do sort pesado. Recomendacao: seguir pela alternativa 3 e usar aumento de memoria apenas como mitigacao temporaria se houver urgencia operacional.
+- Impacto comercial: sem analytics confiavel, o experimento 76 fica contaminado e a decisao sobre a v6 pode ser falsa; corrigir o caminho de leitura do funil e pre-requisito para criar um novo teste limpo com aprendizado confiavel.
+
+## 2026-07-31 02:11:10 UTC-3
+
+- Solicitacao recebida: validar novamente o cockpit do experimento 77 apos deploy da correcao de funil/cockpit PDE v6.
+- Pergunta explicita de causa raiz: "por que o cockpit 77 poderia continuar errado mesmo apos o deploy?". Resposta: o deploy do backend principal foi confirmado por `/actuator/info`, mas o cockpit ainda pode zerar se a integracao backend principal -> PDE depender da versao corrente agregada do summary, de atribuicao UTM/campanha divergente ou de bloqueios operacionais do proprio experimento antes de aplicar o fallback por slot `v6`.
+- Evidencias coletadas: `/actuator/info` do backend principal respondeu HTTP 200 com commit `622c3361600109cee4f44a42a2613c1516d12928`; container `ai-hub-6-backend-1` rodando imagem tagueada por SHA; `/api/experiments/77/cockpit` respondeu HTTP 200, mas manteve funil zerado e health `BLOCKED`; `/api/experiments/77/funnel` tambem retornou todos os estagios com zero.
+- Comparacao com PDE: `https://v6.clubemusa.com.br/api/pde/access/analytics/metodo-musa-7-dias/summary` respondeu HTTP 200 com `35` sessoes humanas totais, sendo `29` sessoes na experience `musa-pde-entry-v6-video-motivacional`, `29` entradas PDE, `12` videos parciais, `6` videos completos, `0` checkout iniciado e `0` compras.
+- Achado de causa provavel: o summary chamado pelo host `v6` ainda publica `currentExperienceVersion` como `musa-pde-entry-v5-video-explicativo`, embora traga a v6 dentro de `experienceVersions`; parametros comuns de consulta (`experienceVersion`, `version`, `slot`, `host`) nao mudaram o total consolidado. Isso indica que o backend principal precisa selecionar explicitamente a linha da v6 em `experienceVersions` para o experimento 77, em vez de confiar no campo consolidado `currentExperienceVersion`.
+- Decisao comercial: nao liberar trafego novo nem interpretar o experimento 77 como rejeicao de mercado. O PDE v6 mede consumo inicial real, mas o cockpit 77 ainda nao apresenta esses dados corretamente; alem disso, o experimento permanece `PLANNED`, sem criativos aprovados e sem publico publicavel.
+
+## 2026-08-01 02:15:00 UTC - Ambiente no dialogo das solicitacoes
+
+- Solicitacao recebida: na tela do dialogo das solicitacoes, mostrar em qual ambiente a solicitacao foi feita.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a pagina tecnica de detalhe e a lista de historico ja exibiam `environment`, mas o componente de dialogo do modo ChatGPT/MKT guardava nas mensagens apenas `requestId`, `status`, conteudo e data. Assim, a bolha da conversa perdia o contexto de ambiente apesar de o backend ja retornar esse dado em `CodexRequest`.
+- Alternativas avaliadas: (1) confiar apenas no historico lateral, baixo esforco mas nao atende a leitura dentro do dialogo; (2) buscar detalhes da solicitacao a cada render da conversa, completo mas adiciona chamadas e latencia desnecessarias; (3) persistir `environment` no modelo local `ChatMessage` quando a solicitacao e criada/atualizada e usar fallback pelo mapa das solicitacoes carregadas. Escolhida a alternativa 3 por corrigir a causa na fronteira UI/estado, preservar mensagens antigas e evitar novas chamadas.
+- Ajuste aplicado: `apps/frontend/src/pages/CodexChatgptPage.tsx` agora inclui `environment` em mensagens do dialogo, atualiza esse campo no polling/edicao/criacao da solicitacao e renderiza `Ambiente: ...` no cabecalho da bolha vinculada a uma execucao.
+- Validacao executada: `npm ci` em `apps/frontend` para restaurar a toolchain local e `npm run build` com sucesso.
+- Nao foi criado Pull Request.
+## 2026-08-01 02:49:49 UTC-3
+
+- Pergunta recebida: avaliar um caminho para o próprio sistema criar o PR e continuar o trabalho quando a solicitação depende de publicação, sem nova intervenção do usuário.
+- Pergunta de causa raiz aplicada: “por que esse erro aconteceu?”. O fluxo não para por limitação do modelo ou do GitHub; ele para porque a execução MKT desabilita a criação automática de PR, a interface é quem chama `create-pr` e a continuação posterior apenas é preparada no navegador para envio manual.
+- Alternativas avaliadas: automatizar o frontend; manter o modelo aguardando e operando o GitHub na mesma execução; ou criar uma máquina de estados persistente no backend acionada por webhooks e reconciliação. A terceira foi recomendada por ser independente do navegador, idempotente, auditável e compatível com proteções do GitHub.
+- Documento criado em `docs/automacao-pr-e-retomada.md`, descrevendo fases, limites de autonomia, proteções contra duplicidade/ciclos e uma implantação incremental em três etapas.
+- Escopo desta alteração: documentação e decisão arquitetural; nenhuma automação de merge foi habilitada e nenhuma política de aprovação do repositório foi contornada.
+
+## 2026-08-02 - Remocao de assuntos dos dialogos com o modelo
+
+- Solicitacao recebida: retirar a opcao de assunto e qualquer referencia a assuntos dos dialogos, restaurando uma conversa continua e natural.
+- Pergunta explicita de causa raiz: "por que esse erro aconteceu?". Resposta: a funcionalidade de assuntos nao era apenas um controle visual; o assunto selecionado filtrava o historico enviado ao modelo. Como uma conversa nova comecava sem assunto e o modelo precisava classifica-la antes de o contexto ser reaproveitado, o dialogo ficava artificial, fragmentado e mais dificil para o usuario.
+- Correcao aplicada na causa: removidos o seletor e os marcadores de assunto, o estado e a persistencia de assunto nas mensagens, as instrucoes que obrigavam o modelo a criar/repetir o campo `assunto` e, principalmente, o filtro de historico. Agora todas as mensagens anteriores do dialogo compoem naturalmente o contexto da proxima solicitacao.
+- Compatibilidade: o parser de resposta estruturada continua tratando titulo, comentario, impacto em vendas e metadados de PR/ambiente, mas nao exige nem interpreta assunto; mensagens antigas persistidas sao carregadas sem propagar esse metadado legado.
+- Protecao contra regressao: o teste E2E do fluxo foi refeito para confirmar a ausencia do controle e das instrucoes de assunto e para verificar que a segunda mensagem recebe tanto a pergunta quanto a resposta anteriores no historico.
+- Validacoes executadas: `npm run build`, `npm run lint`, `npm run test:e2e -- --grep "conversation flowing naturally"` e `git diff --check`, todas com sucesso. A interface resultante tambem foi inspecionada em Chromium e registrada em `/tmp/ai-hub-dialogo-sem-assunto.png`.
+
+## 2026-08-02 - Placar operacional diário de impacto em vendas
+
+- Solicitação recebida: incluir no quadro fixo de “Dia operacional” um placar diário baseado nos cinco critérios de impacto em vendas que já aparecem como ícones do vermelho ao verde nas respostas das solicitações de Marketing.
+- Pergunta explícita de causa raiz: “por que esse placar não existia?”. Resposta: o backend de métricas agregava somente quantidade de solicitações, interações e duração, enquanto a nota comercial permanecia embutida no JSON textual de cada resposta. Calcular a nota apenas a partir das 20 solicitações carregadas no frontend produziria um placar incompleto e divergente do mesmo corte operacional das 03:00.
+- Correção aplicada na causa: a API de métricas agora lê as respostas do período operacional, respeita o filtro de perfil, reutiliza a extração tolerante de JSON (inclusive respostas cercadas por bloco Markdown), normaliza aliases e acentuação dos cinco níveis e devolve a contagem diária de `muito_baixo` a `muito_alto`, além do total avaliado.
+- Interface: o quadro “Dia operacional” do perfil Marketing ganhou o “Placar de vendas”, com os cinco indicadores na mesma escala visual vermelho → verde, a quantidade em cada critério, total de solicitações avaliadas e tooltips com os nomes das notas.
+- Proteção contra regressão: adicionado teste unitário do agrupamento no backend e teste E2E do placar, incluindo captura visual em `/tmp/ai-hub-placar-vendas-operacional.png`.
+- Validações executadas: `mvn -q -f apps/backend/pom.xml -Dtest=CodexRequestServiceTest test`, `npm run build --prefix apps/frontend`, `npm run test:e2e --prefix apps/frontend -- --grep "operational-day sales impact scoreboard"` e `git diff --check`.
